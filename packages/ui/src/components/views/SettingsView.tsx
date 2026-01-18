@@ -162,6 +162,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const showTabLabels = containerWidth === 0 || containerWidth >= TAB_LABELS_MIN_WIDTH;
 
   const loadedTabsRef = React.useRef<Map<string, string | null>>(new Map());
+  const mountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     const cacheKey = `${activeTab}:${activeProjectId ?? 'global'}`;
@@ -173,19 +181,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     loadedTabsRef.current.set(activeTab, cacheKey);
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     if (activeTab === 'agents') {
-      setTimeout(() => void useAgentsStore.getState().loadAgents(), 0);
-      return;
+      timeoutId = setTimeout(() => {
+        if (mountedRef.current) {
+          void useAgentsStore.getState().loadAgents();
+        }
+      }, 0);
+      return () => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+      };
     }
 
     if (activeTab === 'commands') {
-      setTimeout(() => void useCommandsStore.getState().loadCommands(), 0);
-      return;
+      timeoutId = setTimeout(() => {
+        if (mountedRef.current) {
+          void useCommandsStore.getState().loadCommands();
+        }
+      }, 0);
+      return () => {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
+      };
     }
 
     if (activeTab === 'skills') {
-      void useSkillsStore.getState().loadSkills();
-      void useSkillsCatalogStore.getState().loadCatalog();
+      if (mountedRef.current) {
+        void useSkillsStore.getState().loadSkills();
+        void useSkillsCatalogStore.getState().loadCatalog();
+      }
     }
   }, [activeProjectId, activeTab]);
 
@@ -221,7 +249,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       setHasManuallyResized(true);
     };
 
-    const handlePointerUp = () => setIsResizing(false);
+    const handlePointerUp = () => {
+      setIsResizing(false);
+      useUIStore.getState().setGlobalResizing(false);
+    };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp, { once: true });
@@ -234,6 +265,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const handlePointerDown = (event: React.PointerEvent) => {
     setIsResizing(true);
+    useUIStore.getState().setGlobalResizing(true);
     startXRef.current = event.clientX;
     startWidthRef.current = sidebarWidth;
     event.preventDefault();

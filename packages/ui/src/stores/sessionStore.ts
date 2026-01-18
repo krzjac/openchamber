@@ -10,6 +10,7 @@ import { useProjectsStore } from "./useProjectsStore";
 import type { ProjectEntry } from "@/lib/api/types";
 import { checkIsGitRepository } from "@/lib/gitApi";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
+import { useMessageStore } from "./messageStore";
 
 interface SessionState {
     sessions: Session[];
@@ -1397,6 +1398,8 @@ export const useSessionStore = create<SessionStore>()(
                     if (!sessionId) {
                         return;
                     }
+
+                    useMessageStore.getState().cleanupSession(sessionId);
 
                     set((state) => {
                         const target = state.sessions.find((session) => session.id === sessionId) as { directory?: string | null } | undefined;

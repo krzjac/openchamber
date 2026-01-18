@@ -362,6 +362,7 @@ interface MessageActions {
     getLastMessageModel: (sessionId: string) => { providerID?: string; modelID?: string } | null;
     updateSessionCompaction: (sessionId: string, compactingTimestamp: number | null | undefined) => void;
     acknowledgeSessionAbort: (sessionId: string) => void;
+    cleanupSession: (sessionId: string) => void;
 }
 
 type MessageStore = MessageState & MessageActions;
@@ -386,6 +387,11 @@ export const useMessageStore = create<MessageStore>()(
                 pendingUserMessageMetaBySession: new Map(),
 
                 loadMessages: async (sessionId: string, limit: number = MEMORY_LIMITS.VIEWPORT_MESSAGES) => {
+                        const existingMessages = get().messages.get(sessionId);
+                        if (existingMessages && existingMessages.length > 0) {
+                            return;
+                        }
+
                         const allMessages = await executeWithSessionDirectory(sessionId, () => opencodeClient.getSessionMessages(sessionId));
 
                         // Filter out reverted messages first
@@ -2178,6 +2184,63 @@ export const useMessageStore = create<MessageStore>()(
                         const nextAbortFlags = new Map(state.sessionAbortFlags);
                         nextAbortFlags.set(sessionId, { ...record, acknowledged: true });
                         return { sessionAbortFlags: nextAbortFlags } as Partial<MessageState>;
+                    });
+                },
+
+                cleanupSession: (sessionId: string) => {
+                    if (!sessionId) {
+                        return;
+                    }
+
+                    const sessionMessages = get().messages.get(sessionId);
+                    if (sessionMessages) {
+                        const messageIds = sessionMessages
+                            .filter(msg => msg.info?.id)
+                            .map(msg => msg.info.id as string);
+
+                        messageIds.forEach(id => {
+                            const timeout = timeoutRegistry.get(id);
+                            if (timeout) {
+                                clearTimeout(timeout);
+                                timeoutRegistry.delete(id);
+                            }
+                            lastContentRegistry.delete(id);
+                        });
+
+                        clearLifecycleTimersForIds(new Set(messageIds));
+                    }
+
+                    const cooldownTimer = streamingCooldownTimers.get(sessionId);
+                    if (cooldownTimer) {
+                        clearTimeout(cooldownTimer);
+                        streamingCooldownTimers.delete(sessionId);
+                    }
+
+                    set((state) => {
+                        const nextMessages = new Map(state.messages);
+                        nextMessages.delete(sessionId);
+
+                        const nextMemoryState = new Map(state.sessionMemoryState);
+                        nextMemoryState.delete(sessionId);
+
+                        const nextStreamingIds = new Map(state.streamingMessageIds);
+                        nextStreamingIds.delete(sessionId);
+
+                        const nextAbortFlags = new Map(state.sessionAbortFlags);
+                        nextAbortFlags.delete(sessionId);
+
+                        const nextPendingMeta = cleanupPendingUserMessageMeta(
+                            state.pendingUserMessageMetaBySession,
+                            sessionId
+                        );
+
+                        return {
+                            messages: nextMessages,
+                            sessionMemoryState: nextMemoryState,
+                            streamingMessageIds: nextStreamingIds,
+                            sessionAbortFlags: nextAbortFlags,
+                            pendingUserMessageMetaBySession: nextPendingMeta,
+                        };
                     });
                 },
 

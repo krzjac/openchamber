@@ -186,12 +186,6 @@ export const ChatContainer: React.FC = () => {
             return;
         }
 
-        const existingMessages = messages.get(currentSessionId);
-        if (existingMessages && existingMessages.length > 0) {
-            loadedSessionsRef.current.add(currentSessionId);
-            return;
-        }
-
         loadedSessionsRef.current.add(currentSessionId);
 
         const load = async () => {
@@ -209,7 +203,7 @@ export const ChatContainer: React.FC = () => {
         };
 
         void load();
-    }, [currentSessionId, loadMessages, messages, scrollToBottom]);
+    }, [currentSessionId, loadMessages, scrollToBottom]);
 
     if (!currentSessionId && !draftOpen) {
         return (
