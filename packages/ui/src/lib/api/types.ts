@@ -576,3 +576,76 @@ export interface SkillsInstallResponse {
   error?: SkillsInstallError;
 }
 
+// ============== Pull Request / Review Types ==============
+
+export interface PrReviewComment {
+  id: string;
+  body: string;
+  path: string;
+  line: number;
+  author: {
+    login: string;
+  };
+  createdAt: string;
+}
+
+export interface PrReviewThread {
+  id: string;
+  isResolved: boolean;
+  comments: PrReviewComment[];
+}
+
+export type PrCheckState = 'SUCCESS' | 'FAILURE' | 'PENDING' | 'ERROR';
+export type PrCheckStatus = 'COMPLETED' | 'IN_PROGRESS' | 'QUEUED' | 'WAITING' | 'PENDING';
+export type PrCheckConclusion =
+  | 'SUCCESS'
+  | 'FAILURE'
+  | 'NEUTRAL'
+  | 'CANCELLED'
+  | 'TIMED_OUT'
+  | 'ACTION_REQUIRED'
+  | 'SKIPPED'
+  | 'STALE'
+  | 'STARTUP_FAILURE';
+
+export interface PrStatusCheck {
+  context?: string;
+  name?: string;
+  state?: PrCheckState;
+  status?: PrCheckStatus;
+  conclusion?: PrCheckConclusion;
+  targetUrl?: string;
+  detailsUrl?: string;
+  description?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface PrStatus {
+  number?: number;
+  title?: string;
+  url?: string;
+  state?: string | null;
+  isDraft?: boolean;
+  mergeStateStatus?: string;
+  headRefName?: string;
+  baseRefName?: string;
+  additions?: number;
+  deletions?: number;
+  changedFiles?: number;
+  reviewThreads?: PrReviewThread[];
+  statusCheckRollup?: PrStatusCheck[];
+}
+
+export interface GetPrStatusResult {
+  success: boolean;
+  pr?: PrStatus | null;
+  error?: string;
+}
+
+export interface GetPrChecksResult {
+  success: boolean;
+  checks?: PrStatusCheck[];
+  error?: string;
+}
+
