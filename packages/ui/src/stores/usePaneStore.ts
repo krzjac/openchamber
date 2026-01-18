@@ -3,10 +3,10 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { useSessionStore } from './useSessionStore';
 import { useUIStore } from './useUIStore';
+import { type PaneTabType, getTabLabel } from '@/constants/tabs';
 
+export type { PaneTabType } from '@/constants/tabs';
 export type PaneId = 'left' | 'right';
-
-export type PaneTabType = 'chat' | 'diff' | 'files' | 'terminal' | 'git' | 'browser' | 'todo' | 'preview';
 
 export interface PaneTab {
   id: string;
@@ -67,24 +67,13 @@ const generateTabId = (type: PaneTabType): string => {
   return `${type}-${timestamp}-${random}`;
 };
 
-const TAB_TITLES: Record<PaneTabType, string> = {
-  chat: 'Chat',
-  diff: 'Diff',
-  files: 'Files',
-  terminal: 'Terminal',
-  git: 'Git',
-  browser: 'Browser',
-  todo: 'Note',
-  preview: 'Preview',
-};
-
 const createDefaultTabs = (tabTypes?: PaneTabType[]): PaneTab[] => {
   const types = tabTypes ?? useUIStore.getState().defaultLeftPaneTabs;
   const now = Date.now();
   return types.map((type, index) => ({
     id: generateTabId(type),
     type,
-    title: TAB_TITLES[type] ?? type,
+    title: getTabLabel(type),
     createdAt: now + index,
   }));
 };
@@ -95,7 +84,7 @@ const createDefaultRightTabs = (): PaneTab[] => {
   return types.map((type, index) => ({
     id: generateTabId(type),
     type,
-    title: TAB_TITLES[type] ?? type,
+    title: getTabLabel(type),
     createdAt: now + index,
   }));
 };
