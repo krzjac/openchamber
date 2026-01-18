@@ -6,7 +6,7 @@ import { useUIStore } from './useUIStore';
 import { type PaneTabType, getTabLabel } from '@/constants/tabs';
 
 export type { PaneTabType } from '@/constants/tabs';
-export type PaneId = 'left' | 'right';
+export type PaneId = 'left' | 'right' | 'rightBottom';
 
 export interface PaneTab {
   id: string;
@@ -25,9 +25,11 @@ interface PaneState {
 }
 
 interface PaneStoreState {
-  panesByWorktree: Map<string, { left: PaneState; right: PaneState }>;
+  panesByWorktree: Map<string, { left: PaneState; right: PaneState; rightBottom: PaneState }>;
   rightPaneVisible: boolean;
   rightPaneWidth: number;
+  rightBottomHeight: number;
+  rightBottomCollapsed: boolean;
   focusedPane: PaneId;
 }
 
@@ -36,6 +38,9 @@ interface PaneStoreActions {
   setFocusedPane: (paneId: PaneId) => void;
   toggleRightPane: () => void;
   setRightPaneWidth: (width: number) => void;
+  setRightBottomHeight: (height: number) => void;
+  setRightBottomCollapsed: (collapsed: boolean) => void;
+  toggleRightBottomCollapsed: () => void;
   initializeWorktree: (worktreeId: string) => void;
   
   addTab: (worktreeId: string, paneId: PaneId, tab: Omit<PaneTab, 'id' | 'createdAt'>) => string;
@@ -90,9 +95,9 @@ const createDefaultRightTabs = (): PaneTab[] => {
 };
 
 const ensureWorktreePanes = (
-  panesByWorktree: Map<string, { left: PaneState; right: PaneState }>,
+  panesByWorktree: Map<string, { left: PaneState; right: PaneState; rightBottom: PaneState }>,
   worktreeId: string
-): { left: PaneState; right: PaneState } => {
+): { left: PaneState; right: PaneState; rightBottom: PaneState } => {
   let panes = panesByWorktree.get(worktreeId);
   if (!panes) {
     const leftTabs = createDefaultTabs();
@@ -100,6 +105,7 @@ const ensureWorktreePanes = (
     panes = {
       left: { tabs: leftTabs, activeTabId: leftTabs[0]?.id ?? null },
       right: { tabs: rightTabs, activeTabId: rightTabs[0]?.id ?? null },
+      rightBottom: { tabs: [], activeTabId: null },
     };
     panesByWorktree.set(worktreeId, panes);
   }
@@ -113,6 +119,8 @@ export const usePaneStore = create<PaneStore>()(
         panesByWorktree: new Map(),
         rightPaneVisible: true,
         rightPaneWidth: 400,
+        rightBottomHeight: 250,
+        rightBottomCollapsed: true,
         focusedPane: 'left',
         
         getPaneState: (worktreeId: string, paneId: PaneId) => {
@@ -132,6 +140,20 @@ export const usePaneStore = create<PaneStore>()(
         setRightPaneWidth: (width: number) => {
           const maxWidth = typeof window !== 'undefined' ? Math.floor(window.innerWidth * 0.6) : 800;
           set({ rightPaneWidth: Math.max(280, Math.min(maxWidth, width)) });
+        },
+        
+        setRightBottomHeight: (height: number) => {
+          const MIN_HEIGHT = 100;
+          const maxHeight = typeof window !== 'undefined' ? Math.floor(window.innerHeight * 0.7) : 600;
+          set({ rightBottomHeight: Math.max(MIN_HEIGHT, Math.min(maxHeight, height)) });
+        },
+        
+        setRightBottomCollapsed: (collapsed: boolean) => {
+          set({ rightBottomCollapsed: collapsed });
+        },
+        
+        toggleRightBottomCollapsed: () => {
+          set((state) => ({ rightBottomCollapsed: !state.rightBottomCollapsed }));
         },
         
         initializeWorktree: (worktreeId: string) => {
@@ -354,7 +376,7 @@ export const usePaneStore = create<PaneStore>()(
           const panes = get().panesByWorktree.get(worktreeId);
           if (!panes) return null;
           
-          for (const paneId of ['left', 'right'] as PaneId[]) {
+          for (const paneId of ['left', 'right', 'rightBottom'] as PaneId[]) {
             const tab = panes[paneId].tabs.find(
               (t) => t.type === 'chat' && t.sessionId === sessionId
             );
@@ -398,19 +420,33 @@ export const usePaneStore = create<PaneStore>()(
           panesByWorktree: Object.fromEntries(state.panesByWorktree),
           rightPaneVisible: state.rightPaneVisible,
           rightPaneWidth: state.rightPaneWidth,
+          rightBottomHeight: state.rightBottomHeight,
+          rightBottomCollapsed: state.rightBottomCollapsed,
         }),
         merge: (persisted, current) => {
           const persistedState = persisted as {
-            panesByWorktree?: Record<string, { left: PaneState; right: PaneState }>;
+            panesByWorktree?: Record<string, { left: PaneState; right: PaneState; rightBottom?: PaneState }>;
             rightPaneVisible?: boolean;
             rightPaneWidth?: number;
+            rightBottomHeight?: number;
+            rightBottomCollapsed?: boolean;
           };
+          
+          const migratedPanes = Object.entries(persistedState.panesByWorktree ?? {}).map(([key, value]) => {
+            const panes = value;
+            if (!panes.rightBottom) {
+              panes.rightBottom = { tabs: [], activeTabId: null };
+            }
+            return [key, panes] as [string, { left: PaneState; right: PaneState; rightBottom: PaneState }];
+          });
           
           return {
             ...current,
-            panesByWorktree: new Map(Object.entries(persistedState.panesByWorktree ?? {})),
+            panesByWorktree: new Map(migratedPanes),
             rightPaneVisible: persistedState.rightPaneVisible ?? true,
             rightPaneWidth: persistedState.rightPaneWidth ?? 400,
+            rightBottomHeight: persistedState.rightBottomHeight ?? 250,
+            rightBottomCollapsed: persistedState.rightBottomCollapsed ?? true,
           };
         },
       }
@@ -438,13 +474,23 @@ export function usePanes(worktreeId: string | null) {
     return panes?.right ?? EMPTY_PANE_STATE;
   });
   
+  const rightBottomPane = usePaneStore((state) => {
+    const panes = state.panesByWorktree.get(resolvedId);
+    return panes?.rightBottom ?? EMPTY_PANE_STATE;
+  });
+  
   const focusedPane = usePaneStore((state) => state.focusedPane);
   const rightPaneVisible = usePaneStore((state) => state.rightPaneVisible);
   const rightPaneWidth = usePaneStore((state) => state.rightPaneWidth);
+  const rightBottomHeight = usePaneStore((state) => state.rightBottomHeight);
+  const rightBottomCollapsed = usePaneStore((state) => state.rightBottomCollapsed);
   
   const setFocusedPane = usePaneStore((state) => state.setFocusedPane);
   const toggleRightPane = usePaneStore((state) => state.toggleRightPane);
   const setRightPaneWidth = usePaneStore((state) => state.setRightPaneWidth);
+  const setRightBottomHeight = usePaneStore((state) => state.setRightBottomHeight);
+  const setRightBottomCollapsed = usePaneStore((state) => state.setRightBottomCollapsed);
+  const toggleRightBottomCollapsed = usePaneStore((state) => state.toggleRightBottomCollapsed);
   const addTabStore = usePaneStore((state) => state.addTab);
   const closeTabStore = usePaneStore((state) => state.closeTab);
   const setActiveTabStore = usePaneStore((state) => state.setActiveTab);
@@ -460,13 +506,19 @@ export function usePanes(worktreeId: string | null) {
   return {
     leftPane,
     rightPane,
+    rightBottomPane,
     focusedPane,
     rightPaneVisible,
     rightPaneWidth,
+    rightBottomHeight,
+    rightBottomCollapsed,
     
     setFocusedPane,
     toggleRightPane,
     setRightPaneWidth,
+    setRightBottomHeight,
+    setRightBottomCollapsed,
+    toggleRightBottomCollapsed,
     
     addTab: (paneId: PaneId, tab: Omit<PaneTab, 'id' | 'createdAt'>) => 
       addTabStore(resolvedId, paneId, tab),
