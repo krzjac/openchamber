@@ -21,6 +21,7 @@ interface WorkspacePaneProps {
   className?: string;
   style?: React.CSSProperties;
   isLastPane?: boolean;
+  isCollapsed?: boolean;
 }
 
 const WorkspacePaneComponent: React.FC<WorkspacePaneProps> = ({
