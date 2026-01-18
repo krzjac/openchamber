@@ -1,15 +1,17 @@
 import React, { useRef, memo } from 'react';
-import { RiAttachment2, RiCloseLine, RiComputerLine, RiFileImageLine, RiFileLine, RiFilePdfLine, RiHardDrive3Line } from '@remixicon/react';
+import { RiAttachment2, RiCloseLine, RiComputerLine, RiFileImageLine, RiFileLine, RiFilePdfLine, RiFolder6Line, RiHardDrive3Line } from '@remixicon/react';
 import { useSessionStore, type AttachedFile } from '@/stores/useSessionStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useIsVSCodeRuntime } from '@/hooks/useRuntimeAPIs';
 import type { ToolPopupContent } from './message/types';
 
 export const FileAttachmentButton = memo(() => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const { addAttachedFile } = useSessionStore();
   const { isMobile } = useUIStore();
   const isVSCodeRuntime = useIsVSCodeRuntime();
@@ -44,6 +46,16 @@ export const FileAttachmentButton = memo(() => {
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    await attachFiles(files);
+
+    if (folderInputRef.current) {
+      folderInputRef.current.value = '';
     }
   };
 
@@ -99,23 +111,51 @@ export const FileAttachmentButton = memo(() => {
         onChange={handleFileSelect}
         accept="*/*"
       />
-      <button
-        type='button'
-        onClick={() => {
-          if (isVSCodeRuntime) {
-            void handleVSCodePick();
-          } else {
-            fileInputRef.current?.click();
-          }
-        }}
-        className={cn(
-          buttonSizeClass,
-          'flex items-center justify-center text-muted-foreground transition-none outline-none focus:outline-none flex-shrink-0'
-        )}
-        title='Attach files'
-      >
-        <RiAttachment2 className={cn(iconSizeClass, 'text-current')} />
-      </button>
+      <input
+        ref={folderInputRef}
+        type="file"
+        {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
+        multiple
+        className="hidden"
+        onChange={handleFolderSelect}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type='button'
+            className={cn(
+              buttonSizeClass,
+              'flex items-center justify-center text-muted-foreground transition-none outline-none focus:outline-none flex-shrink-0'
+            )}
+            title='Attach files or folder'
+          >
+            <RiAttachment2 className={cn(iconSizeClass, 'text-current')} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={5}>
+          <DropdownMenuItem
+            onClick={() => {
+              if (isVSCodeRuntime) {
+                void handleVSCodePick();
+              } else {
+                fileInputRef.current?.click();
+              }
+            }}
+          >
+            <RiFileLine className="h-4 w-4 mr-2" />
+            Attach Files
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              folderInputRef.current?.click();
+            }}
+            disabled={isVSCodeRuntime}
+          >
+            <RiFolder6Line className="h-4 w-4 mr-2" />
+            Attach Folder
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 });
