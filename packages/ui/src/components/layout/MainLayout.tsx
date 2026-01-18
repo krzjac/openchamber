@@ -18,7 +18,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useEdgeSwipe } from '@/hooks/useEdgeSwipe';
 import { cn } from '@/lib/utils';
 
-import { SettingsView } from '@/components/views';
+import { SettingsView, ChatView } from '@/components/views';
 
 export const MainLayout: React.FC = () => {
     const {
@@ -29,6 +29,8 @@ export const MainLayout: React.FC = () => {
         isMultiRunLauncherOpen,
         setMultiRunLauncherOpen,
         multiRunLauncherPrefillPrompt,
+        sidebarMode,
+        focusedSessionId,
     } = useUIStore();
     
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
@@ -164,6 +166,7 @@ export const MainLayout: React.FC = () => {
     }, []);
 
     const isSettingsActive = isSettingsDialogOpen && !isMobile;
+    const isFocusedSessionView = sidebarMode === 'sessions' && focusedSessionId !== null;
 
     const handleResizeStart = React.useCallback((e: React.MouseEvent) => {
         e.preventDefault();
@@ -270,77 +273,85 @@ export const MainLayout: React.FC = () => {
                     </>
                 ) : (
                     <>
-                        {!isSettingsActive && (
-                            <Sidebar isOpen={isSidebarOpen} isMobile={isMobile}>
-                                <WorktreeSidebar />
-                            </Sidebar>
-                        )}
+                        <Sidebar isOpen={isSidebarOpen} isMobile={isMobile}>
+                            <WorktreeSidebar />
+                        </Sidebar>
 
                         <div className="flex flex-1 overflow-hidden relative">
-                            <div className={cn('flex flex-1 overflow-hidden', (isSettingsActive || isMultiRunLauncherOpen) && 'invisible')}>
-                            <WorkspacePane
-                                paneId="left"
-                                worktreeId={worktreeId}
-                                className="flex-1"
-                                isLastPane={!rightPaneVisible}
-                            />
-                            {rightPaneVisible ? (
-                                <>
-                                    <div
-                                        className={cn(
-                                            'w-1 cursor-col-resize hover:bg-primary/20 transition-colors shrink-0',
-                                            isResizing && 'bg-primary/30'
-                                        )}
-                                        onMouseDown={handleResizeStart}
-                                        style={{ borderLeft: '1px solid var(--interactive-border)' }}
-                                    />
-                                    <WorkspacePane
-                                        paneId="right"
-                                        worktreeId={worktreeId}
-                                        className="shrink-0"
-                                        style={{ width: rightPaneWidth }}
-                                        isLastPane={true}
-                                    />
-                                </>
-                            ) : isDraggingTab && (
-                                <div
-                                    className={cn(
-                                        'shrink-0 transition-all duration-150 flex items-center justify-center',
-                                        isRightDropZoneHovered 
-                                            ? 'bg-primary/10 border-l-2 border-primary w-32' 
-                                            : 'w-12 border-l border-dashed border-muted-foreground/40'
-                                    )}
-                                    onDragOver={handleRightDropZoneDragOver}
-                                    onDragLeave={handleRightDropZoneDragLeave}
-                                    onDrop={handleRightDropZoneDrop}
-                                >
-                                    {isRightDropZoneHovered && (
-                                        <span className="text-xs text-primary font-medium rotate-90 whitespace-nowrap">
-                                            Drop to open panel
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            </div>
-
-                            {isMultiRunLauncherOpen && (
-                                <div className={cn('absolute inset-0 z-10', isDesktopRuntime ? 'bg-transparent' : 'bg-background')}>
+                            {isSettingsActive ? (
+                                <div className="flex-1 overflow-hidden">
                                     <ErrorBoundary>
-                                        <MultiRunLauncher
-                                            initialPrompt={multiRunLauncherPrefillPrompt}
-                                            onCreated={() => setMultiRunLauncherOpen(false)}
-                                            onCancel={() => setMultiRunLauncherOpen(false)}
-                                        />
+                                        <SettingsView integrated />
                                     </ErrorBoundary>
                                 </div>
+                            ) : isFocusedSessionView ? (
+                                <div className="flex-1 overflow-hidden">
+                                    <ErrorBoundary>
+                                        <ChatView />
+                                    </ErrorBoundary>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className={cn('flex flex-1 overflow-hidden', isMultiRunLauncherOpen && 'invisible')}>
+                                        <WorkspacePane
+                                            paneId="left"
+                                            worktreeId={worktreeId}
+                                            className="flex-1"
+                                            isLastPane={!rightPaneVisible}
+                                        />
+                                        {rightPaneVisible ? (
+                                            <>
+                                                <div
+                                                    className={cn(
+                                                        'w-1 cursor-col-resize hover:bg-primary/20 transition-colors shrink-0',
+                                                        isResizing && 'bg-primary/30'
+                                                    )}
+                                                    onMouseDown={handleResizeStart}
+                                                    style={{ borderLeft: '1px solid var(--interactive-border)' }}
+                                                />
+                                                <WorkspacePane
+                                                    paneId="right"
+                                                    worktreeId={worktreeId}
+                                                    className="shrink-0"
+                                                    style={{ width: rightPaneWidth }}
+                                                    isLastPane={true}
+                                                />
+                                            </>
+                                        ) : isDraggingTab && (
+                                            <div
+                                                className={cn(
+                                                    'shrink-0 transition-all duration-150 flex items-center justify-center',
+                                                    isRightDropZoneHovered 
+                                                        ? 'bg-primary/10 border-l-2 border-primary w-32' 
+                                                        : 'w-12 border-l border-dashed border-muted-foreground/40'
+                                                )}
+                                                onDragOver={handleRightDropZoneDragOver}
+                                                onDragLeave={handleRightDropZoneDragLeave}
+                                                onDrop={handleRightDropZoneDrop}
+                                            >
+                                                {isRightDropZoneHovered && (
+                                                    <span className="text-xs text-primary font-medium rotate-90 whitespace-nowrap">
+                                                        Drop to open panel
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {isMultiRunLauncherOpen && (
+                                        <div className={cn('absolute inset-0 z-10', isDesktopRuntime ? 'bg-transparent' : 'bg-background')}>
+                                            <ErrorBoundary>
+                                                <MultiRunLauncher
+                                                    initialPrompt={multiRunLauncherPrefillPrompt}
+                                                    onCreated={() => setMultiRunLauncherOpen(false)}
+                                                    onCancel={() => setMultiRunLauncherOpen(false)}
+                                                />
+                                            </ErrorBoundary>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
-
-                        {isSettingsActive && (
-                            <div className={cn('absolute inset-0 z-10', isDesktopRuntime ? 'bg-transparent' : 'bg-background')}>
-                                <ErrorBoundary><SettingsView onClose={() => setSettingsDialogOpen(false)} /></ErrorBoundary>
-                            </div>
-                        )}
                     </>
                 )}
             </div>

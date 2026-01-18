@@ -8,6 +8,8 @@ import { hasModifier } from '@/lib/utils';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { usePaneStore } from '@/stores/usePaneStore';
 
 export const useKeyboardShortcuts = () => {
   const { openNewSessionDraft, abortCurrentOperation, armAbortPrompt, clearAbortPrompt, currentSessionId } = useSessionStore();
@@ -141,6 +143,51 @@ export const useKeyboardShortcuts = () => {
         e.preventDefault();
         const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
         textarea?.focus();
+        return;
+      }
+
+      // Cmd/Ctrl+1-9: Switch to tab by index in focused pane
+      if (hasModifier(e) && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const {
+          isSettingsDialogOpen,
+          isCommandPaletteOpen,
+          isHelpDialogOpen,
+          isSessionSwitcherOpen,
+          isAboutDialogOpen,
+        } = useUIStore.getState();
+
+        // Skip if any overlay is open
+        const hasOverlay = isSettingsDialogOpen || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
+        if (hasOverlay) {
+          return;
+        }
+
+        e.preventDefault();
+        const index = parseInt(e.key, 10) - 1; // Convert 1-9 to 0-8
+        const worktreeId = useDirectoryStore.getState().currentDirectory ?? 'global';
+        usePaneStore.getState().activateTabByIndex(worktreeId, index);
+        return;
+      }
+
+      // Cmd/Ctrl+W: Close active tab in focused pane
+      if (hasModifier(e) && !e.shiftKey && e.key.toLowerCase() === 'w') {
+        const {
+          isSettingsDialogOpen,
+          isCommandPaletteOpen,
+          isHelpDialogOpen,
+          isSessionSwitcherOpen,
+          isAboutDialogOpen,
+        } = useUIStore.getState();
+
+        // Skip if any overlay is open
+        const hasOverlay = isSettingsDialogOpen || isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
+        if (hasOverlay) {
+          return;
+        }
+
+        e.preventDefault();
+        const worktreeId = useDirectoryStore.getState().currentDirectory ?? 'global';
+        usePaneStore.getState().closeActiveTab(worktreeId);
         return;
       }
 

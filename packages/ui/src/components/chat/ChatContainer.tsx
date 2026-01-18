@@ -167,17 +167,32 @@ export const ChatContainer: React.FC = () => {
         }
     }, [scrollRef]);
 
+    const loadedSessionsRef = React.useRef<Set<string>>(new Set());
+
+    React.useEffect(() => {
+        loadedSessionsRef.current.forEach((sessionId) => {
+            if (!messages.has(sessionId)) {
+                loadedSessionsRef.current.delete(sessionId);
+            }
+        });
+    }, [messages]);
+
     React.useEffect(() => {
         if (!currentSessionId) {
             return;
         }
 
-        const hasSessionMessages = messages.has(currentSessionId);
-        const existingMessages = hasSessionMessages ? messages.get(currentSessionId) ?? [] : [];
-
-        if (existingMessages.length > 0) {
+        if (loadedSessionsRef.current.has(currentSessionId)) {
             return;
         }
+
+        const existingMessages = messages.get(currentSessionId);
+        if (existingMessages && existingMessages.length > 0) {
+            loadedSessionsRef.current.add(currentSessionId);
+            return;
+        }
+
+        loadedSessionsRef.current.add(currentSessionId);
 
         const load = async () => {
             try {

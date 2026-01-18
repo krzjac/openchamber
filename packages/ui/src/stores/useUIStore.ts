@@ -5,6 +5,7 @@ import { getSafeStorage } from './utils/safeStorage';
 import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey } from '@/lib/typography';
 
 export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files';
+export type SidebarMode = 'projects' | 'sessions';
 export type EventStreamStatus =
   | 'idle'
   | 'connecting'
@@ -32,7 +33,10 @@ interface UIStore {
   isAboutDialogOpen: boolean;
   isSessionCreateDialogOpen: boolean;
   isSettingsDialogOpen: boolean;
+  activeSettingsTab: SidebarSection;
   isModelSelectorOpen: boolean;
+  sidebarMode: SidebarMode;
+  focusedSessionId: string | null;
   sidebarSection: SidebarSection;
   eventStreamStatus: EventStreamStatus;
   eventStreamHint: string | null;
@@ -74,7 +78,10 @@ interface UIStore {
   setAboutDialogOpen: (open: boolean) => void;
   setSessionCreateDialogOpen: (open: boolean) => void;
   setSettingsDialogOpen: (open: boolean) => void;
+  setActiveSettingsTab: (tab: SidebarSection) => void;
   setModelSelectorOpen: (open: boolean) => void;
+  setSidebarMode: (mode: SidebarMode) => void;
+  setFocusedSessionId: (sessionId: string | null) => void;
   applyTheme: () => void;
   setSidebarSection: (section: SidebarSection) => void;
   setEventStreamStatus: (status: EventStreamStatus, hint?: string | null) => void;
@@ -126,7 +133,10 @@ export const useUIStore = create<UIStore>()(
         isAboutDialogOpen: false,
         isSessionCreateDialogOpen: false,
         isSettingsDialogOpen: false,
+        activeSettingsTab: 'settings',
         isModelSelectorOpen: false,
+        sidebarMode: 'projects',
+        focusedSessionId: null,
         sidebarSection: 'sessions',
         eventStreamStatus: 'idle',
         eventStreamHint: null,
@@ -244,8 +254,20 @@ export const useUIStore = create<UIStore>()(
           set({ isSettingsDialogOpen: open });
         },
 
+        setActiveSettingsTab: (tab) => {
+          set({ activeSettingsTab: tab });
+        },
+
         setModelSelectorOpen: (open) => {
           set({ isModelSelectorOpen: open });
+        },
+
+        setSidebarMode: (mode) => {
+          set({ sidebarMode: mode, focusedSessionId: null });
+        },
+
+        setFocusedSessionId: (sessionId) => {
+          set({ focusedSessionId: sessionId });
         },
 
         setSidebarSection: (section) => {
@@ -499,6 +521,8 @@ export const useUIStore = create<UIStore>()(
           sidebarSection: state.sidebarSection,
           isSessionCreateDialogOpen: state.isSessionCreateDialogOpen,
           isSettingsDialogOpen: state.isSettingsDialogOpen,
+          activeSettingsTab: state.activeSettingsTab,
+          sidebarMode: state.sidebarMode,
           showReasoningTraces: state.showReasoningTraces,
           autoDeleteEnabled: state.autoDeleteEnabled,
           autoDeleteAfterDays: state.autoDeleteAfterDays,

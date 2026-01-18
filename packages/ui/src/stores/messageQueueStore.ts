@@ -11,18 +11,23 @@ export interface QueuedMessage {
     createdAt: number;
 }
 
+export type QueueSendBehavior = 'all' | 'first-only';
+
 interface MessageQueueState {
-    queuedMessages: Record<string, QueuedMessage[]>; // sessionId → queue
-    queueModeEnabled: boolean; // global toggle
+    queuedMessages: Record<string, QueuedMessage[]>;
+    queueModeEnabled: boolean;
+    queueSendBehavior: QueueSendBehavior;
 }
 
 interface MessageQueueActions {
     addToQueue: (sessionId: string, message: Omit<QueuedMessage, 'id' | 'createdAt'>) => void;
     removeFromQueue: (sessionId: string, messageId: string) => void;
     popToInput: (sessionId: string, messageId: string) => QueuedMessage | null;
+    shiftFirstFromQueue: (sessionId: string) => QueuedMessage | null;
     clearQueue: (sessionId: string) => void;
     clearAllQueues: () => void;
     setQueueMode: (enabled: boolean) => void;
+    setQueueSendBehavior: (behavior: QueueSendBehavior) => void;
     getQueueForSession: (sessionId: string) => QueuedMessage[];
 }
 
@@ -34,6 +39,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
             (set, get) => ({
                 queuedMessages: {},
                 queueModeEnabled: false,
+                queueSendBehavior: 'first-only' as QueueSendBehavior,
 
                 addToQueue: (sessionId, message) => {
                     const id = `queued-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -120,8 +126,36 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
 
                 setQueueMode: (enabled) => {
                     set({ queueModeEnabled: enabled });
-                    // Persist to settings.json (async, fire-and-forget)
                     void updateDesktopSettings({ queueModeEnabled: enabled });
+                },
+
+                setQueueSendBehavior: (behavior) => {
+                    set({ queueSendBehavior: behavior });
+                    void updateDesktopSettings({ queueSendBehavior: behavior });
+                },
+
+                shiftFirstFromQueue: (sessionId) => {
+                    const state = get();
+                    const currentQueue = state.queuedMessages[sessionId] ?? [];
+                    if (currentQueue.length === 0) return null;
+
+                    const [first, ...rest] = currentQueue;
+
+                    set((prevState) => {
+                        if (rest.length === 0) {
+                            const { [sessionId]: _removed, ...remaining } = prevState.queuedMessages;
+                            void _removed;
+                            return { queuedMessages: remaining };
+                        }
+                        return {
+                            queuedMessages: {
+                                ...prevState.queuedMessages,
+                                [sessionId]: rest,
+                            },
+                        };
+                    });
+
+                    return first;
                 },
 
                 getQueueForSession: (sessionId) => {
@@ -134,6 +168,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                 partialize: (state) => ({
                     queuedMessages: state.queuedMessages,
                     queueModeEnabled: state.queueModeEnabled,
+                    queueSendBehavior: state.queueSendBehavior,
                 }),
             }
         ),

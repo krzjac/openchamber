@@ -4,7 +4,7 @@ import { RiRestartLine } from '@remixicon/react';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import type { ThemeMode } from '@/types/theme';
 import { useUIStore } from '@/stores/useUIStore';
-import { useMessageQueueStore } from '@/stores/messageQueueStore';
+import { useMessageQueueStore, type QueueSendBehavior } from '@/stores/messageQueueStore';
 import { cn, getModifierLabel } from '@/lib/utils';
 import { ButtonSmall } from '@/components/ui/button-small';
 import { NumberInput } from '@/components/ui/number-input';
@@ -69,7 +69,12 @@ const DIFF_VIEW_MODE_OPTIONS: Option<'single' | 'stacked'>[] = [
     },
 ];
 
-export type VisibleSetting = 'theme' | 'fontSize' | 'spacing' | 'inputBarOffset' | 'toolOutput' | 'diffLayout' | 'reasoning' | 'queueMode';
+export type VisibleSetting = 'theme' | 'fontSize' | 'spacing' | 'inputBarOffset' | 'toolOutput' | 'diffLayout' | 'reasoning' | 'queueMode' | 'queueSendBehavior';
+
+const QUEUE_SEND_BEHAVIOR_OPTIONS: Array<{ value: QueueSendBehavior; label: string; description: string }> = [
+    { value: 'first-only', label: 'One at a time', description: 'Send only the first queued message when the agent finishes' },
+    { value: 'all', label: 'All at once', description: 'Send all queued messages together when the agent finishes' },
+];
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -94,6 +99,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const setDiffViewMode = useUIStore(state => state.setDiffViewMode);
     const queueModeEnabled = useMessageQueueStore(state => state.queueModeEnabled);
     const setQueueMode = useMessageQueueStore(state => state.setQueueMode);
+    const queueSendBehavior = useMessageQueueStore(state => state.queueSendBehavior);
+    const setQueueSendBehavior = useMessageQueueStore(state => state.setQueueSendBehavior);
     const {
         themeMode,
         setThemeMode,
@@ -400,6 +407,31 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                             ? `Enter queues messages, ${getModifierLabel()}+Enter sends immediately.` 
                             : `Enter sends immediately, ${getModifierLabel()}+Enter queues messages.`}
                     </p>
+                </div>
+            )}
+
+            {shouldShow('queueSendBehavior') && (
+                <div className="space-y-4">
+                    <div className="space-y-1">
+                        <h3 className="typography-ui-header font-semibold text-foreground">
+                            Queue Send Behavior
+                        </h3>
+                        <p className="typography-meta text-muted-foreground">
+                            {QUEUE_SEND_BEHAVIOR_OPTIONS.find(o => o.value === queueSendBehavior)?.description}
+                        </p>
+                    </div>
+                    <div className="flex gap-1 w-fit">
+                        {QUEUE_SEND_BEHAVIOR_OPTIONS.map((option) => (
+                            <ButtonSmall
+                                key={option.value}
+                                variant={queueSendBehavior === option.value ? 'default' : 'outline'}
+                                className={cn(queueSendBehavior === option.value ? undefined : 'text-foreground')}
+                                onClick={() => setQueueSendBehavior(option.value)}
+                            >
+                                {option.label}
+                            </ButtonSmall>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

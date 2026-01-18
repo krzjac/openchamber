@@ -474,44 +474,55 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return [...sessions].sort((a, b) => (b.time?.updated || 0) - (a.time?.updated || 0));
   }, [sessions]);
 
+  const projectIdsRef = React.useRef<string>('');
+  
   React.useEffect(() => {
-    let cancelled = false;
     const normalizedProjects = projects
       .map((project) => ({ id: project.id, path: normalizePath(project.path) }))
       .filter((project): project is { id: string; path: string } => Boolean(project.path));
 
-    setProjectRepoStatus(new Map());
+    const projectIdsKey = normalizedProjects.map(p => p.id).sort().join(',');
+    if (projectIdsKey === projectIdsRef.current) {
+      return;
+    }
+    projectIdsRef.current = projectIdsKey;
 
     if (normalizedProjects.length === 0) {
-      return () => {
-        cancelled = true;
-      };
+      setProjectRepoStatus(new Map());
+      return;
     }
 
-    normalizedProjects.forEach((project) => {
-      checkIsGitRepository(project.path)
-        .then((result) => {
-          if (!cancelled) {
-            setProjectRepoStatus((prev) => {
-              const next = new Map(prev);
-              next.set(project.id, result);
-              return next;
-            });
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setProjectRepoStatus((prev) => {
-              const next = new Map(prev);
-              next.set(project.id, null);
-              return next;
-            });
-          }
-        });
-    });
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      normalizedProjects.forEach((project) => {
+        if (cancelled) return;
+        checkIsGitRepository(project.path)
+          .then((result) => {
+            if (!cancelled) {
+              setProjectRepoStatus((prev) => {
+                if (prev.get(project.id) === result) return prev;
+                const next = new Map(prev);
+                next.set(project.id, result);
+                return next;
+              });
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setProjectRepoStatus((prev) => {
+                if (prev.get(project.id) === null) return prev;
+                const next = new Map(prev);
+                next.set(project.id, null);
+                return next;
+              });
+            }
+          });
+      });
+    }, 100);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
     };
   }, [projects]);
 
@@ -560,6 +571,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
   }, [currentSessionId, parentMap]);
 
+  const directoryCheckTimeoutRef = React.useRef<number | null>(null);
+  const pendingDirectoriesRef = React.useRef<Set<string>>(new Set());
+
   React.useEffect(() => {
     const directories = new Set<string>();
     sortedSessions.forEach((session) => {
@@ -575,38 +589,61 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       }
     });
 
+    const uncheckedDirectories: string[] = [];
     directories.forEach((directory) => {
       const known = directoryStatus.get(directory);
       if ((known && known !== 'unknown') || checkingDirectories.current.has(directory)) {
         return;
       }
-      checkingDirectories.current.add(directory);
-      opencodeClient
-        .listLocalDirectory(directory)
-        .then(() => {
-          setDirectoryStatus((prev) => {
-            const next = new Map(prev);
-            if (next.get(directory) === 'exists') {
-              return prev;
-            }
-            next.set(directory, 'exists');
-            return next;
-          });
-        })
-        .catch(() => {
-          setDirectoryStatus((prev) => {
-            const next = new Map(prev);
-            if (next.get(directory) === 'missing') {
-              return prev;
-            }
-            next.set(directory, 'missing');
-            return next;
-          });
-        })
-        .finally(() => {
-          checkingDirectories.current.delete(directory);
-        });
+      uncheckedDirectories.push(directory);
+      pendingDirectoriesRef.current.add(directory);
     });
+
+    if (uncheckedDirectories.length === 0) {
+      return;
+    }
+
+    if (directoryCheckTimeoutRef.current) {
+      window.clearTimeout(directoryCheckTimeoutRef.current);
+    }
+
+    directoryCheckTimeoutRef.current = window.setTimeout(() => {
+      const toCheck = Array.from(pendingDirectoriesRef.current);
+      pendingDirectoriesRef.current.clear();
+      
+      toCheck.forEach((directory) => {
+        if (checkingDirectories.current.has(directory)) return;
+        checkingDirectories.current.add(directory);
+        
+        opencodeClient
+          .listLocalDirectory(directory)
+          .then(() => {
+            setDirectoryStatus((prev) => {
+              if (prev.get(directory) === 'exists') return prev;
+              const next = new Map(prev);
+              next.set(directory, 'exists');
+              return next;
+            });
+          })
+          .catch(() => {
+            setDirectoryStatus((prev) => {
+              if (prev.get(directory) === 'missing') return prev;
+              const next = new Map(prev);
+              next.set(directory, 'missing');
+              return next;
+            });
+          })
+          .finally(() => {
+            checkingDirectories.current.delete(directory);
+          });
+      });
+    }, 150);
+
+    return () => {
+      if (directoryCheckTimeoutRef.current) {
+        window.clearTimeout(directoryCheckTimeoutRef.current);
+      }
+    };
   }, [sortedSessions, projects, directoryStatus]);
 
   React.useEffect(() => {
@@ -1029,36 +1066,53 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
   }, [normalizedProjects, getSessionsForProject, buildGroupedSessions, availableWorktreesByProject]);
 
-  // Track when project sticky headers become "stuck"
+  const observerRef = React.useRef<IntersectionObserver | null>(null);
+  
   React.useEffect(() => {
     if (!isDesktopRuntime) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          const projectId = (entry.target as HTMLElement).dataset.projectId;
-          if (!projectId) return;
-          
-          setStuckProjectHeaders((prev) => {
-            const next = new Set(prev);
-            if (!entry.isIntersecting) {
-              next.add(projectId);
-            } else {
-              next.delete(projectId);
-            }
-            return next;
+    if (!observerRef.current) {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            const projectId = (entry.target as HTMLElement).dataset.projectId;
+            if (!projectId) return;
+            
+            setStuckProjectHeaders((prev) => {
+              const isStuck = !entry.isIntersecting;
+              if (isStuck === prev.has(projectId)) return prev;
+              const next = new Set(prev);
+              if (isStuck) {
+                next.add(projectId);
+              } else {
+                next.delete(projectId);
+              }
+              return next;
+            });
           });
-        });
-      },
-      { threshold: 0 }
-    );
+        },
+        { threshold: 0 }
+      );
+    }
 
-    projectHeaderSentinelRefs.current.forEach((el) => {
+    const observer = observerRef.current;
+    const currentRefs = projectHeaderSentinelRefs.current;
+    currentRefs.forEach((el) => {
       if (el) observer.observe(el);
     });
 
-    return () => observer.disconnect();
+    return () => {
+      currentRefs.forEach((el) => {
+        if (el) observer.unobserve(el);
+      });
+    };
   }, [isDesktopRuntime, projectSections]);
+
+  React.useEffect(() => {
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, []);
 
   const renderSessionNode = React.useCallback(
     (node: SessionNode, depth = 0, groupDirectory?: string | null, projectId?: string | null): React.ReactNode => {

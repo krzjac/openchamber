@@ -59,9 +59,9 @@ export type DesktopSettings = {
   defaultGitIdentityId?: string; // ''/undefined = unset, 'global' or profile id
   autoCreateWorktree?: boolean;
   queueModeEnabled?: boolean;
-  commitMessageModel?: string; // format: "provider/model"
+  queueSendBehavior?: 'all' | 'first-only';
+  commitMessageModel?: string;
 
-  // User-added skills catalogs (persisted to ~/.config/openchamber/settings.json)
   skillCatalogs?: SkillCatalogConfig[];
 };
 

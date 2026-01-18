@@ -3,6 +3,7 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import {
   RiAddLine,
   RiArrowDownSLine,
+  RiArrowLeftLine,
   RiArrowRightSLine,
   RiCloseLine,
   RiFolder6Line,
@@ -18,6 +19,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -32,6 +35,8 @@ import { checkIsGitRepository } from '@/lib/gitApi';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { BranchPickerDialog } from '@/components/session/BranchPickerDialog';
 import type { WorktreeMetadata } from '@/types/worktree';
+import { SIDEBAR_SECTIONS, type SidebarSection } from '@/constants/sidebar';
+import { isVSCodeRuntime } from '@/lib/desktop';
 
 const normalizePath = (value?: string | null): string | null => {
   if (!value) return null;
@@ -223,12 +228,8 @@ const ProjectSection: React.FC<ProjectSectionProps> = ({
           ) : (
             <RiArrowDownSLine className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
-          <RiFolder6Line className={cn(
-            'h-4 w-4 shrink-0',
-            isActive ? 'text-primary' : 'text-muted-foreground'
-          )} />
           <span className={cn(
-            'flex-1 truncate text-sm font-medium',
+            'flex-1 truncate text-base font-medium',
             isActive ? 'text-foreground' : 'text-muted-foreground'
           )}>
             {projectLabel}
@@ -256,25 +257,6 @@ const ProjectSection: React.FC<ProjectSectionProps> = ({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {isRepo && onNewWorktreeSession && (
-          <Tooltip delayDuration={700}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNewWorktreeSession();
-                }}
-                className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground hover:bg-muted/50 transition-all"
-                aria-label="New worktree session"
-              >
-                <RiGitBranchLine className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">New worktree session</TooltipContent>
-          </Tooltip>
-        )}
-
         {isRepo && onOpenBranchPicker && (
           <Tooltip delayDuration={700}>
             <TooltipTrigger asChild>
@@ -291,6 +273,25 @@ const ProjectSection: React.FC<ProjectSectionProps> = ({
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Browse branches</TooltipContent>
+          </Tooltip>
+        )}
+
+        {isRepo && onNewWorktreeSession && (
+          <Tooltip delayDuration={700}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewWorktreeSession();
+                }}
+                className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+                aria-label="New worktree session"
+              >
+                <RiAddLine className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">New worktree session</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -359,6 +360,28 @@ export const WorktreeSidebar: React.FC<WorktreeSidebarProps> = () => {
   const setDirectory = useDirectoryStore((s) => s.setDirectory);
   
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
+  const isSettingsOpen = useUIStore((s) => s.isSettingsDialogOpen);
+  const setSettingsOpen = useUIStore((s) => s.setSettingsDialogOpen);
+  const activeSettingsTab = useUIStore((s) => s.activeSettingsTab);
+  const setActiveSettingsTab = useUIStore((s) => s.setActiveSettingsTab);
+  const sidebarMode = useUIStore((s) => s.sidebarMode);
+  const setSidebarMode = useUIStore((s) => s.setSidebarMode);
+  const focusedSessionId = useUIStore((s) => s.focusedSessionId);
+  const setFocusedSessionId = useUIStore((s) => s.setFocusedSessionId);
+  
+  const sessions = useSessionStore((s) => s.sessions);
+
+  const isVSCode = useMemo(() => isVSCodeRuntime(), []);
+  
+  const settingsSections = useMemo(() => {
+    let sections = SIDEBAR_SECTIONS.filter(s => s.id !== 'sessions');
+    if (isVSCode) {
+      sections = sections.filter(s => s.id !== 'git-identities');
+    }
+    const openChamberSection = sections.find(s => s.id === 'settings');
+    const otherSections = sections.filter(s => s.id !== 'settings');
+    return openChamberSection ? [openChamberSection, ...otherSections] : sections;
+  }, [isVSCode]);
 
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [projectRepoStatus, setProjectRepoStatus] = useState<Map<string, boolean>>(new Map());
@@ -502,29 +525,188 @@ export const WorktreeSidebar: React.FC<WorktreeSidebarProps> = () => {
     }>;
   }, [projects]);
 
+  const handleSelectSettingsTab = useCallback((tab: SidebarSection) => {
+    setActiveSettingsTab(tab);
+  }, [setActiveSettingsTab]);
+
+  const renderSettingsView = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex h-12 min-h-12 items-center justify-between px-3 border-b border-border/50">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(false)}
+          className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <RiArrowLeftLine className="h-4 w-4" />
+          <span>Settings</span>
+        </button>
+      </div>
+
+      <ScrollableOverlay className="flex-1 overflow-y-auto p-2">
+        {settingsSections.map(({ id, label, icon: Icon }) => {
+          const isActive = activeSettingsTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => handleSelectSettingsTab(id)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors',
+                isActive
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="text-sm font-medium">{label}</span>
+            </button>
+          );
+        })}
+      </ScrollableOverlay>
+    </div>
+  );
+
+  const setCurrentSession = useSessionStore((s) => s.setCurrentSession);
+  
+  const handleSelectSession = useCallback((sessionId: string) => {
+    setFocusedSessionId(sessionId);
+    setCurrentSession(sessionId);
+  }, [setFocusedSessionId, setCurrentSession]);
+
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const aTime = a.time?.updated ?? a.time?.created ?? 0;
+      const bTime = b.time?.updated ?? b.time?.created ?? 0;
+      return bTime - aTime;
+    });
+  }, [sessions]);
+
+  const renderSidebarHeader = () => (
+    <div className="flex h-12 min-h-12 items-center justify-between px-3 border-b border-border/50">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span>{sidebarMode === 'projects' ? 'Projects' : 'Sessions'}</span>
+            <RiArrowDownSLine className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-[140px]">
+          <DropdownMenuRadioGroup value={sidebarMode} onValueChange={(v) => setSidebarMode(v as 'projects' | 'sessions')}>
+            <DropdownMenuRadioItem value="projects">Projects</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="sessions">Sessions</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {sidebarMode === 'projects' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={handleAddProject}
+              className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            >
+              <RiAddLine className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Add Project</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+
+  const renderSessionsView = () => (
+    <div className="flex flex-col h-full">
+      {renderSidebarHeader()}
+
+      <div className="px-2 pt-2">
+        <button
+          type="button"
+          onClick={toggleCommandPalette}
+          className="flex w-full items-center gap-2 px-2.5 py-2 rounded border border-muted-foreground/25 text-muted-foreground hover:text-foreground hover:bg-muted/40 hover:border-muted-foreground/40 transition-all"
+        >
+          <RiSearchLine className="h-4 w-4" />
+          <span className="flex-1 text-left text-sm">Search...</span>
+          <kbd className="hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border/50 bg-muted/30 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            {getModifierLabel()}K
+          </kbd>
+        </button>
+      </div>
+
+      <ScrollableOverlay className="flex-1 overflow-y-auto p-2">
+        {sortedSessions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-4 text-center">
+            <RiChat4Line className="h-10 w-10 text-muted-foreground/50 mb-3" />
+            <p className="text-sm font-medium text-muted-foreground mb-1">No sessions yet</p>
+            <p className="text-xs text-muted-foreground/70">Start a conversation to create a session</p>
+          </div>
+        ) : (
+          sortedSessions.map((session) => {
+            const isActive = focusedSessionId === session.id;
+            const sessionTime = session.time?.updated ?? session.time?.created;
+            const phase = sessionActivityPhase?.get(session.id);
+            const isStreaming = phase === 'busy' || phase === 'cooldown';
+            
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => handleSelectSession(session.id)}
+                className={cn(
+                  'group flex w-full flex-col gap-0.5 rounded-md px-2 py-2 text-left mb-1',
+                  'transition-colors',
+                  isActive
+                    ? 'bg-primary/10'
+                    : 'hover:bg-muted/50'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <RiChat4Line className={cn(
+                    'h-4 w-4 shrink-0',
+                    isActive ? 'text-primary' : 'text-muted-foreground'
+                  )} />
+                  <span className={cn(
+                    'flex-1 truncate text-sm',
+                    isActive ? 'text-primary font-medium' : 'text-foreground'
+                  )}>
+                    {session.title || 'Untitled'}
+                  </span>
+                  {isStreaming && (
+                    <GridLoader size="xs" className="text-primary shrink-0" />
+                  )}
+                </div>
+                {sessionTime && (
+                  <span className="text-xs text-muted-foreground/70 pl-6">
+                    {formatRelativeTime(sessionTime)}
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </ScrollableOverlay>
+    </div>
+  );
+
+  if (isSettingsOpen) {
+    return renderSettingsView();
+  }
+
+  if (sidebarMode === 'sessions') {
+    return renderSessionsView();
+  }
+
   if (normalizedProjects.length === 0) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex h-12 items-center justify-between px-3 border-b border-border/50">
-          <span className="text-sm font-medium text-muted-foreground">Projects</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={handleAddProject}
-                className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              >
-                <RiAddLine className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Add Project</TooltipContent>
-          </Tooltip>
-        </div>
+        {renderSidebarHeader()}
         <div className="px-2 pt-2">
           <button
             type="button"
             onClick={toggleCommandPalette}
-            className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            className="flex w-full items-center gap-2 px-2.5 py-2 rounded border border-muted-foreground/25 text-muted-foreground hover:text-foreground hover:bg-muted/40 hover:border-muted-foreground/40 transition-all"
           >
             <RiSearchLine className="h-4 w-4" />
             <span className="flex-1 text-left text-sm">Search...</span>
@@ -552,27 +734,13 @@ export const WorktreeSidebar: React.FC<WorktreeSidebarProps> = () => {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex h-12 items-center justify-between px-3 border-b border-border/50">
-        <span className="text-sm font-medium text-muted-foreground">Projects</span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={handleAddProject}
-              className="h-6 w-6 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            >
-              <RiAddLine className="h-4 w-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Add Project</TooltipContent>
-        </Tooltip>
-      </div>
+      {renderSidebarHeader()}
 
       <div className="px-2 pt-2">
         <button
           type="button"
           onClick={toggleCommandPalette}
-          className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          className="flex w-full items-center gap-2 px-2.5 py-2 rounded border border-muted-foreground/25 text-muted-foreground hover:text-foreground hover:bg-muted/40 hover:border-muted-foreground/40 transition-all"
         >
           <RiSearchLine className="h-4 w-4" />
           <span className="flex-1 text-left text-sm">Search...</span>

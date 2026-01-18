@@ -4958,6 +4958,70 @@ async function main(options = {}) {
     }
   });
 
+  // ============== PREVIEW PROXY ENDPOINT ==============
+  const { injectScript, stripSecurityHeaders, rewriteUrls } = await import('./lib/preview-proxy.js');
+
+  app.get('/api/preview-proxy', async (req, res) => {
+    const targetUrl = req.query.url;
+    
+    if (!targetUrl || typeof targetUrl !== 'string') {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+
+    try {
+      const parsedUrl = new URL(targetUrl);
+      
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(targetUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+
+      clearTimeout(timeout);
+
+      const contentType = response.headers.get('content-type') || '';
+      const cleanedHeaders = stripSecurityHeaders(response.headers);
+
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+      for (const [key, value] of Object.entries(cleanedHeaders)) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey !== 'content-encoding' && 
+            lowerKey !== 'transfer-encoding' && 
+            lowerKey !== 'content-length') {
+          res.set(key, value);
+        }
+      }
+
+      if (contentType.includes('text/html')) {
+        let html = await response.text();
+        html = rewriteUrls(html, targetUrl, '/api/preview-proxy');
+        html = injectScript(html, targetUrl);
+        
+        res.set('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        const buffer = await response.arrayBuffer();
+        res.set('Content-Type', contentType);
+        res.send(Buffer.from(buffer));
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return res.status(504).json({ error: 'Request timeout' });
+      }
+      console.error('Preview proxy error:', error);
+      res.status(500).json({ error: error.message || 'Failed to proxy request' });
+    }
+  });
+
   app.post('/api/terminal/force-kill', (req, res) => {
     const { sessionId, cwd } = req.body;
     let killedCount = 0;

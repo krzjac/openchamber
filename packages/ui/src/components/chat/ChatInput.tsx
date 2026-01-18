@@ -23,6 +23,7 @@ import { SkillAutocomplete, type SkillAutocompleteHandle } from './SkillAutocomp
 import { cn } from '@/lib/utils';
 import { ServerFilePicker } from './ServerFilePicker';
 import { ModelControls } from './ModelControls';
+import { CompactButton } from './CompactButton';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
 import { StatusRow } from './StatusRow';
 import { useAssistantStatus } from '@/hooks/useAssistantStatus';
@@ -158,8 +159,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const prevWasAbortedRef = React.useRef(false);
     const sendTriggeredByPointerDownRef = React.useRef(false);
 
-    // Message queue
     const queueModeEnabled = useMessageQueueStore((state) => state.queueModeEnabled);
+    const queueSendBehavior = useMessageQueueStore((state) => state.queueSendBehavior);
     const queuedMessages = useMessageQueueStore(
         React.useCallback(
             (state) => {
@@ -171,6 +172,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     );
     const addToQueue = useMessageQueueStore((state) => state.addToQueue);
     const clearQueue = useMessageQueueStore((state) => state.clearQueue);
+    const shiftFirstFromQueue = useMessageQueueStore((state) => state.shiftFirstFromQueue);
 
     // Session activity for auto-send on idle
     const { phase: sessionPhase } = useCurrentSessionActivity();
@@ -542,16 +544,42 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
     };
 
-    // Keep a ref to handleSubmit for auto-send effect
     const handleSubmitRef = React.useRef(handleSubmit);
     handleSubmitRef.current = handleSubmit;
 
-    // Auto-send queued messages when session becomes idle (but not after abort)
+    const handleSendFirstQueuedMessage = React.useCallback(async () => {
+        if (!currentSessionId || !currentProviderId || !currentModelId) return;
+
+        const firstMessage = shiftFirstFromQueue(currentSessionId);
+        if (!firstMessage) return;
+
+        scrollToBottom?.({ instant: true, force: true });
+
+        const { sanitizedText, mention } = parseAgentMentions(firstMessage.content, agents);
+        const agentMentionName = mention?.name;
+
+        await sendMessage(
+            sanitizedText,
+            currentProviderId,
+            currentModelId,
+            currentAgentName,
+            firstMessage.attachments ?? [],
+            agentMentionName,
+            undefined,
+            currentVariant
+        ).catch((error: unknown) => {
+            const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+            console.error('Auto-send failed:', rawMessage || error);
+        });
+    }, [currentSessionId, currentProviderId, currentModelId, currentAgentName, currentVariant, agents, shiftFirstFromQueue, sendMessage, scrollToBottom]);
+
+    const handleSendFirstQueuedMessageRef = React.useRef(handleSendFirstQueuedMessage);
+    handleSendFirstQueuedMessageRef.current = handleSendFirstQueuedMessage;
+
     React.useEffect(() => {
         const wasWorking = prevSessionPhaseRef.current === 'busy' || prevSessionPhaseRef.current === 'cooldown';
         const isNowIdle = sessionPhase === 'idle';
         
-        // Check if session was recently aborted (within last 2 seconds)
         const wasRecentlyAborted = currentSessionId && sessionAbortFlags.has(currentSessionId) && (() => {
             const abortRecord = sessionAbortFlags.get(currentSessionId);
             if (!abortRecord) return false;
@@ -559,22 +587,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             return timeSinceAbort < 2000;
         })();
         
-        // Detect transition from working to idle, but skip if aborted
         if (wasWorking && isNowIdle && queuedMessages.length > 0 && !autoSendTriggeredRef.current && !wasRecentlyAborted) {
-            // Prevent double-triggering
             autoSendTriggeredRef.current = true;
             
-            // Use setTimeout to avoid calling during render
             setTimeout(() => {
                 if (currentSessionId && currentProviderId && currentModelId) {
-                    void handleSubmitRef.current();
+                    if (queueSendBehavior === 'first-only') {
+                        void handleSendFirstQueuedMessageRef.current();
+                    } else {
+                        void handleSubmitRef.current();
+                    }
                 }
                 autoSendTriggeredRef.current = false;
             }, 100);
         }
         
         prevSessionPhaseRef.current = sessionPhase;
-    }, [sessionPhase, queuedMessages.length, currentSessionId, currentProviderId, currentModelId, sessionAbortFlags]);
+    }, [sessionPhase, queuedMessages.length, currentSessionId, currentProviderId, currentModelId, sessionAbortFlags, queueSendBehavior]);
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Early return during IME composition to prevent interference with autocomplete.
@@ -1491,6 +1520,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                     {attachmentsControls}
                                 </div>
                                 <div className="flex flex-1 items-center justify-end gap-x-1 min-w-0">
+                                    <CompactButton
+                                        isMobile
+                                        iconSizeClass="h-4 w-4"
+                                        buttonHeightClass="h-9"
+                                    />
                                     <div className="flex flex-1 min-w-0 justify-end overflow-hidden">
                                         <ModelControls className={cn('w-full flex items-center justify-end min-w-0')} />
                                     </div>
@@ -1503,6 +1537,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                                     {attachmentsControls}
                                 </div>
                                 <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
+                                    <CompactButton
+                                        iconSizeClass={iconSizeClass}
+                                        buttonHeightClass={footerHeightClass}
+                                    />
                                     <ModelControls className={cn('flex-1 min-w-0 justify-end')} />
                                     {actionButton}
                                 </div>

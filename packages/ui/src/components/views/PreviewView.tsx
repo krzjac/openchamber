@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import {
   RiArrowLeftLine,
   RiArrowRightLine,
@@ -7,13 +7,61 @@ import {
   RiCloseLine,
   RiWindow2Line,
   RiExternalLinkLine,
+  RiShieldLine,
+  RiTerminalBoxLine,
+  RiArrowDownSLine,
+  RiDeleteBinLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { useFileStore } from '@/stores/fileStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
+import { useTabContext } from '@/contexts/useTabContext';
 
-interface ElementSelection {
+interface ElementData {
+  selector: string;
+  xpath: string;
+  tagName: string;
+  outerHTML: string;
+  innerHTML: string;
+  innerText: string;
+  textContent: string;
+  attributes: Record<string, string>;
+  dataAttributes: Record<string, string>;
+  computedStyles: Record<string, string>;
+  boundingRect: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+    bottom: number;
+    right: number;
+    x: number;
+    y: number;
+  };
+  accessibility: {
+    role: string;
+    ariaLabel: string | null;
+    ariaDescribedBy: string | null;
+    ariaLabelledBy: string | null;
+    tabIndex: number;
+    title: string | null;
+  };
+  context: {
+    url: string;
+    title: string;
+    parentSelector: string | null;
+    childCount: number;
+    siblingCount: number;
+  };
+  metadata: {
+    timestamp: number;
+    viewport: { width: number; height: number };
+    scroll: { x: number; y: number };
+  };
+}
+
+interface LegacyElementSelection {
   html: string;
   selector: string;
   tagName: string;
@@ -23,122 +71,186 @@ interface ElementSelection {
   boundingRect: DOMRect;
 }
 
-const ELEMENT_SELECTOR_SCRIPT = `
-(function() {
-  if (window.__openchamberSelector) {
-    window.__openchamberSelector.cleanup();
+interface ConsoleEntry {
+  id: number;
+  level: 'log' | 'info' | 'warn' | 'error';
+  message: string;
+  timestamp: number;
+}
+
+function isProxyUrl(targetUrl: string): boolean {
+  try {
+    const parsed = new URL(targetUrl);
+    const currentOrigin = window.location.origin;
+    const targetOrigin = parsed.origin;
+    return currentOrigin !== targetOrigin;
+  } catch {
+    return false;
   }
-  
-  let currentHighlight = null;
-  let isActive = true;
-  
-  const highlightStyle = 'outline: 2px solid #3b82f6 !important; outline-offset: 2px !important; background-color: rgba(59, 130, 246, 0.1) !important;';
-  
-  function getSelector(el) {
-    if (el.id) return '#' + el.id;
-    let path = [];
-    while (el && el.nodeType === Node.ELEMENT_NODE) {
-      let selector = el.nodeName.toLowerCase();
-      if (el.id) {
-        selector = '#' + el.id;
-        path.unshift(selector);
-        break;
-      } else {
-        let sib = el, nth = 1;
-        while (sib = sib.previousElementSibling) {
-          if (sib.nodeName.toLowerCase() === selector) nth++;
-        }
-        if (nth !== 1) selector += ':nth-of-type(' + nth + ')';
-      }
-      path.unshift(selector);
-      el = el.parentElement;
-    }
-    return path.join(' > ');
-  }
-  
-  function handleMouseOver(e) {
-    if (!isActive) return;
-    e.stopPropagation();
-    if (currentHighlight && currentHighlight !== e.target) {
-      currentHighlight.style.cssText = currentHighlight.style.cssText.replace(highlightStyle, '');
-    }
-    currentHighlight = e.target;
-    e.target.style.cssText += highlightStyle;
-  }
-  
-  function handleMouseOut(e) {
-    if (!isActive) return;
-    e.stopPropagation();
-    if (currentHighlight === e.target) {
-      e.target.style.cssText = e.target.style.cssText.replace(highlightStyle, '');
-    }
-  }
-  
-  function handleClick(e) {
-    if (!isActive) return;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const el = e.target;
-    const rect = el.getBoundingClientRect();
-    
-    const selection = {
-      html: el.outerHTML.substring(0, 2000),
-      selector: getSelector(el),
-      tagName: el.tagName.toLowerCase(),
-      className: el.className,
-      id: el.id,
-      textContent: (el.textContent || '').substring(0, 500),
-      boundingRect: {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        bottom: rect.bottom,
-        right: rect.right,
-        x: rect.x,
-        y: rect.y,
-      }
-    };
-    
-    window.parent.postMessage({ type: 'OPENCHAMBER_ELEMENT_SELECTED', selection }, '*');
-    
-    cleanup();
-  }
-  
-  function cleanup() {
-    isActive = false;
-    if (currentHighlight) {
-      currentHighlight.style.cssText = currentHighlight.style.cssText.replace(highlightStyle, '');
-    }
-    document.removeEventListener('mouseover', handleMouseOver, true);
-    document.removeEventListener('mouseout', handleMouseOut, true);
-    document.removeEventListener('click', handleClick, true);
-    window.__openchamberSelector = null;
-  }
-  
-  document.addEventListener('mouseover', handleMouseOver, true);
-  document.addEventListener('mouseout', handleMouseOut, true);
-  document.addEventListener('click', handleClick, true);
-  
-  window.__openchamberSelector = { cleanup };
-})();
-`;
+}
+
+function buildProxyUrl(targetUrl: string): string {
+  return `/api/preview-proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
+const DEFAULT_URL = 'http://localhost:3000';
+
+interface PreviewTabMetadata {
+  url?: string;
+  historyStack?: string[];
+  historyIndex?: number;
+  useProxy?: boolean;
+  showConsole?: boolean;
+}
 
 export const PreviewView: React.FC = () => {
-  const [url, setUrl] = useState('http://localhost:3000');
-  const [inputUrl, setInputUrl] = useState('http://localhost:3000');
+  const tabContext = useTabContext();
+  const metadata = (tabContext?.tab.metadata ?? {}) as PreviewTabMetadata;
+  
+  const initialUrl = metadata.url ?? DEFAULT_URL;
+  const initialHistoryStack = metadata.historyStack ?? [initialUrl];
+  const initialHistoryIndex = metadata.historyIndex ?? 0;
+  const initialUseProxy = metadata.useProxy ?? true;
+  const initialShowConsole = metadata.showConsole ?? false;
+  
+  const [url, setUrl] = useState(initialUrl);
+  const [inputUrl, setInputUrl] = useState(initialUrl);
   const [isSelectMode, setIsSelectMode] = useState(false);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [useProxy, setUseProxy] = useState(initialUseProxy);
+  const [isScriptReady, setIsScriptReady] = useState(false);
+  const [showConsole, setShowConsole] = useState(initialShowConsole);
+  const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([]);
+  const [consoleHeight, setConsoleHeight] = useState(200);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const historyStack = useRef<string[]>([]);
-  const historyIndex = useRef(-1);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+  const historyStack = useRef<string[]>(initialHistoryStack);
+  const historyIndex = useRef(initialHistoryIndex);
+  const consoleIdCounter = useRef(0);
+  const isResizingConsole = useRef(false);
+  
+  const [, forceUpdate] = useState({});
+  
+  const canGoBack = historyIndex.current > 0;
+  const canGoForward = historyIndex.current < historyStack.current.length - 1;
   
   const addAttachedFile = useFileStore((s) => s.addAttachedFile);
+  
+  const persistState = useCallback((updates: Partial<PreviewTabMetadata> = {}) => {
+    if (tabContext) {
+      tabContext.updateMetadata({
+        url: updates.url ?? url,
+        historyStack: historyStack.current,
+        historyIndex: historyIndex.current,
+        useProxy: updates.useProxy ?? useProxy,
+        showConsole: updates.showConsole ?? showConsole,
+      });
+    }
+  }, [tabContext, url, useProxy, showConsole]);
 
-  const handleElementSelected = useCallback(async (selection: ElementSelection) => {
+  const iframeSrc = useMemo(() => {
+    if (useProxy && isProxyUrl(url)) {
+      return buildProxyUrl(url);
+    }
+    return url;
+  }, [url, useProxy]);
+
+  const formatElementInfo = useCallback((data: ElementData): string => {
+    const lines: string[] = [];
+    
+    lines.push('# Selected Element');
+    lines.push('');
+    lines.push('## Selectors');
+    lines.push(`CSS: ${data.selector}`);
+    lines.push(`XPath: ${data.xpath}`);
+    lines.push('');
+    
+    lines.push('## Element Info');
+    lines.push(`Tag: <${data.tagName}>`);
+    if (data.attributes.id) lines.push(`ID: #${data.attributes.id}`);
+    if (data.attributes.class) lines.push(`Classes: .${data.attributes.class.split(' ').filter(Boolean).join('.')}`);
+    lines.push('');
+    
+    if (data.innerText.trim()) {
+      lines.push('## Text Content');
+      lines.push(data.innerText.substring(0, 500));
+      lines.push('');
+    }
+    
+    const attrEntries = Object.entries(data.attributes).filter(
+      ([k]) => k !== 'class' && k !== 'id' && k !== 'style'
+    );
+    if (attrEntries.length > 0) {
+      lines.push('## Attributes');
+      for (const [key, value] of attrEntries) {
+        lines.push(`${key}: ${value}`);
+      }
+      lines.push('');
+    }
+    
+    if (Object.keys(data.dataAttributes).length > 0) {
+      lines.push('## Data Attributes');
+      for (const [key, value] of Object.entries(data.dataAttributes)) {
+        lines.push(`${key}: ${value}`);
+      }
+      lines.push('');
+    }
+    
+    lines.push('## Accessibility');
+    lines.push(`Role: ${data.accessibility.role}`);
+    if (data.accessibility.ariaLabel) lines.push(`aria-label: ${data.accessibility.ariaLabel}`);
+    if (data.accessibility.title) lines.push(`title: ${data.accessibility.title}`);
+    lines.push(`tabIndex: ${data.accessibility.tabIndex}`);
+    lines.push('');
+    
+    lines.push('## Bounding Rect');
+    lines.push(`Position: (${Math.round(data.boundingRect.x)}, ${Math.round(data.boundingRect.y)})`);
+    lines.push(`Size: ${Math.round(data.boundingRect.width)} x ${Math.round(data.boundingRect.height)}`);
+    lines.push('');
+    
+    if (Object.keys(data.computedStyles).length > 0) {
+      lines.push('## Computed Styles');
+      for (const [prop, value] of Object.entries(data.computedStyles)) {
+        lines.push(`${prop}: ${value}`);
+      }
+      lines.push('');
+    }
+    
+    lines.push('## Context');
+    lines.push(`Page URL: ${data.context.url}`);
+    lines.push(`Page Title: ${data.context.title}`);
+    lines.push(`Children: ${data.context.childCount}`);
+    lines.push(`Siblings: ${data.context.siblingCount}`);
+    lines.push('');
+    
+    lines.push('## HTML');
+    lines.push('```html');
+    lines.push(data.outerHTML.substring(0, 3000));
+    lines.push('```');
+    
+    return lines.join('\n');
+  }, []);
+
+  const handleElementSelected = useCallback(async (data: ElementData) => {
+    setIsSelectMode(false);
+    
+    const elementInfo = formatElementInfo(data);
+    const blob = new Blob([elementInfo], { type: 'text/markdown' });
+    const fileName = `element-${data.tagName}${data.attributes.id ? `-${data.attributes.id}` : ''}-${Date.now()}.md`;
+    const file = new File([blob], fileName, { type: 'text/markdown' });
+    
+    try {
+      await addAttachedFile(file);
+      toast.success('Element attached to chat', {
+        description: `<${data.tagName}>${data.attributes.id ? ` #${data.attributes.id}` : ''} selected`,
+      });
+    } catch (error) {
+      toast.error('Failed to attach element');
+      console.error('Failed to attach element:', error);
+    }
+  }, [addAttachedFile, formatElementInfo]);
+
+  const handleLegacyElementSelected = useCallback(async (selection: LegacyElementSelection) => {
     setIsSelectMode(false);
     
     const elementInfo = `Selected Element:
@@ -166,17 +278,15 @@ ${selection.html}
     }
   }, [addAttachedFile]);
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OPENCHAMBER_ELEMENT_SELECTED') {
-        const selection = event.data.selection as ElementSelection;
-        handleElementSelected(selection);
-      }
+  const addConsoleEntry = useCallback((level: ConsoleEntry['level'], message: string) => {
+    const entry: ConsoleEntry = {
+      id: consoleIdCounter.current++,
+      level,
+      message,
+      timestamp: Date.now(),
     };
-    
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [handleElementSelected]);
+    setConsoleEntries(prev => [...prev.slice(-499), entry]);
+  }, []);
 
   const navigateTo = useCallback((newUrl: string) => {
     let normalizedUrl = newUrl.trim();
@@ -192,10 +302,74 @@ ${selection.html}
     
     setUrl(normalizedUrl);
     setInputUrl(normalizedUrl);
-    setCanGoBack(historyIndex.current > 0);
-    setCanGoForward(false);
     setIsLoading(true);
-  }, []);
+    setIsScriptReady(false);
+    forceUpdate({});
+    persistState({ url: normalizedUrl });
+  }, [persistState]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const { type, data, selection } = event.data || {};
+      
+      switch (type) {
+        case 'OPENCHAMBER_ELEMENT_SELECTED':
+          if (data && typeof data === 'object' && 'xpath' in data) {
+            handleElementSelected(data as ElementData);
+          } else if (selection) {
+            handleLegacyElementSelected(selection as LegacyElementSelection);
+          }
+          break;
+          
+        case 'OPENCHAMBER_SCRIPT_READY':
+          setIsScriptReady(true);
+          if (data?.originalUrl) {
+            setInputUrl(data.originalUrl);
+          } else if (data?.url) {
+            setInputUrl(data.url);
+          }
+          break;
+          
+        case 'OPENCHAMBER_URL_CHANGED':
+          if (data?.originalUrl) {
+            setInputUrl(data.originalUrl);
+            if (data.originalUrl !== url) {
+              if (historyIndex.current < historyStack.current.length - 1) {
+                historyStack.current = historyStack.current.slice(0, historyIndex.current + 1);
+              }
+              historyStack.current.push(data.originalUrl);
+              historyIndex.current = historyStack.current.length - 1;
+              setUrl(data.originalUrl);
+              forceUpdate({});
+              persistState({ url: data.originalUrl });
+            }
+          } else if (data?.url) {
+            setInputUrl(data.url);
+            setUrl(data.url);
+          }
+          break;
+          
+        case 'OPENCHAMBER_PICKER_CANCELLED':
+          setIsSelectMode(false);
+          break;
+          
+        case 'OPENCHAMBER_CONSOLE':
+          if (data?.level && data?.message) {
+            addConsoleEntry(data.level as ConsoleEntry['level'], data.message);
+          }
+          break;
+          
+        case 'OPENCHAMBER_NAVIGATE':
+          if (data?.url) {
+            navigateTo(data.url);
+          }
+          break;
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [handleElementSelected, handleLegacyElementSelected, addConsoleEntry, url, persistState, navigateTo]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -208,11 +382,12 @@ ${selection.html}
       const prevUrl = historyStack.current[historyIndex.current];
       setUrl(prevUrl);
       setInputUrl(prevUrl);
-      setCanGoBack(historyIndex.current > 0);
-      setCanGoForward(true);
       setIsLoading(true);
+      setIsScriptReady(false);
+      forceUpdate({});
+      persistState({ url: prevUrl });
     }
-  }, []);
+  }, [persistState]);
 
   const goForward = useCallback(() => {
     if (historyIndex.current < historyStack.current.length - 1) {
@@ -220,65 +395,109 @@ ${selection.html}
       const nextUrl = historyStack.current[historyIndex.current];
       setUrl(nextUrl);
       setInputUrl(nextUrl);
-      setCanGoBack(true);
-      setCanGoForward(historyIndex.current < historyStack.current.length - 1);
       setIsLoading(true);
+      setIsScriptReady(false);
+      forceUpdate({});
+      persistState({ url: nextUrl });
     }
-  }, []);
+  }, [persistState]);
 
   const refresh = useCallback(() => {
     if (iframeRef.current) {
       setIsLoading(true);
-      iframeRef.current.src = url;
+      setIsScriptReady(false);
+      iframeRef.current.src = iframeSrc;
     }
-  }, [url]);
+  }, [iframeSrc]);
 
-  const injectSelectorScript = useCallback(() => {
-    try {
-      const iframe = iframeRef.current;
-      if (iframe?.contentWindow) {
-        const script = iframe.contentDocument?.createElement('script');
-        if (script) {
-          script.textContent = ELEMENT_SELECTOR_SCRIPT;
-          iframe.contentDocument?.body.appendChild(script);
-        }
-      }
-    } catch {
-      return false;
+  const enablePicker = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'OPENCHAMBER_PICKER_ENABLE' }, '*');
     }
-    return true;
+  }, []);
+
+  const disablePicker = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'OPENCHAMBER_PICKER_DISABLE' }, '*');
+    }
   }, []);
 
   const toggleSelectMode = useCallback(() => {
     if (isSelectMode) {
       setIsSelectMode(false);
-      try {
-        const iframe = iframeRef.current;
-        if (iframe?.contentWindow) {
-          iframe.contentWindow.postMessage({ type: 'OPENCHAMBER_CANCEL_SELECT' }, '*');
-        }
-      } catch { /* cross-origin */ }
+      disablePicker();
     } else {
-      setIsSelectMode(true);
-      if (!injectSelectorScript()) {
-        toast.error('Cannot select elements on this page', {
-          description: 'The page is from a different origin and blocks element selection.',
+      if (useProxy && isScriptReady) {
+        setIsSelectMode(true);
+        enablePicker();
+      } else if (!useProxy) {
+        toast.error('Element selection requires proxy mode', {
+          description: 'Enable proxy mode to select elements on cross-origin pages.',
         });
-        setIsSelectMode(false);
+      } else {
+        toast.error('Page not ready', {
+          description: 'Wait for the page to finish loading.',
+        });
       }
     }
-  }, [isSelectMode, injectSelectorScript]);
+  }, [isSelectMode, useProxy, isScriptReady, enablePicker, disablePicker]);
 
   const handleIframeLoad = useCallback(() => {
     setIsLoading(false);
-    if (isSelectMode) {
-      injectSelectorScript();
-    }
-  }, [isSelectMode, injectSelectorScript]);
+  }, []);
 
   const openExternal = useCallback(() => {
     window.open(url, '_blank');
   }, [url]);
+
+  const toggleProxy = useCallback(() => {
+    const newUseProxy = !useProxy;
+    setUseProxy(newUseProxy);
+    setIsScriptReady(false);
+    setIsSelectMode(false);
+    persistState({ useProxy: newUseProxy });
+  }, [useProxy, persistState]);
+
+  const toggleConsole = useCallback(() => {
+    const newShowConsole = !showConsole;
+    setShowConsole(newShowConsole);
+    persistState({ showConsole: newShowConsole });
+  }, [showConsole, persistState]);
+
+  const clearConsole = useCallback(() => {
+    setConsoleEntries([]);
+  }, []);
+
+  const handleConsoleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingConsole.current = true;
+    const startY = e.clientY;
+    const startHeight = consoleHeight;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingConsole.current) return;
+      const delta = startY - moveEvent.clientY;
+      const newHeight = Math.max(100, Math.min(500, startHeight + delta));
+      setConsoleHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      isResizingConsole.current = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [consoleHeight]);
+
+  useEffect(() => {
+    if (showConsole && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleEntries, showConsole]);
 
   const buttonClass = cn(
     'h-8 w-8 flex items-center justify-center rounded-sm',
@@ -286,6 +505,15 @@ ${selection.html}
     'disabled:opacity-40 disabled:pointer-events-none',
     'transition-colors'
   );
+
+  const getConsoleEntryColor = (level: ConsoleEntry['level']) => {
+    switch (level) {
+      case 'error': return 'text-red-500';
+      case 'warn': return 'text-yellow-500';
+      case 'info': return 'text-blue-500';
+      default: return 'text-foreground';
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -362,9 +590,29 @@ ${selection.html}
               type="button"
               className={cn(
                 buttonClass,
+                useProxy && 'bg-green-500/20 text-green-500'
+              )}
+              onClick={toggleProxy}
+              aria-label={useProxy ? 'Proxy enabled' : 'Proxy disabled'}
+            >
+              <RiShieldLine className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {useProxy ? 'Proxy enabled (element selection works)' : 'Proxy disabled (direct load)'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip delayDuration={500}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                buttonClass,
                 isSelectMode && 'bg-primary/20 text-primary'
               )}
               onClick={toggleSelectMode}
+              disabled={!useProxy || !isScriptReady}
               aria-label={isSelectMode ? 'Cancel selection' : 'Select element'}
             >
               {isSelectMode ? (
@@ -375,7 +623,30 @@ ${selection.html}
             </button>
           </TooltipTrigger>
           <TooltipContent>
-            {isSelectMode ? 'Cancel selection' : 'Select element to attach'}
+            {isSelectMode 
+              ? 'Cancel selection' 
+              : useProxy && isScriptReady 
+                ? 'Select element to attach' 
+                : 'Enable proxy and wait for page to load'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip delayDuration={500}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                buttonClass,
+                showConsole && 'bg-primary/20 text-primary'
+              )}
+              onClick={toggleConsole}
+              aria-label={showConsole ? 'Hide console' : 'Show console'}
+            >
+              <RiTerminalBoxLine className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {showConsole ? 'Hide console' : 'Show console'}
           </TooltipContent>
         </Tooltip>
 
@@ -400,7 +671,10 @@ ${selection.html}
           <span>Click on any element to attach it to your chat</span>
           <button
             type="button"
-            onClick={() => setIsSelectMode(false)}
+            onClick={() => {
+              setIsSelectMode(false);
+              disablePicker();
+            }}
             className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 transition-colors"
           >
             Cancel
@@ -408,30 +682,112 @@ ${selection.html}
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden relative">
-        <iframe
-          ref={iframeRef}
-          src={url}
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-          title="Preview"
-          onLoad={handleIframeLoad}
-        />
-        
-        {isLoading && (
-          <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <RiRefreshLine className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Loading...</span>
+      <div className="flex-1 overflow-hidden relative flex flex-col">
+        <div className={cn('flex-1 overflow-hidden relative', showConsole && 'min-h-0')}>
+          <iframe
+            ref={iframeRef}
+            src={iframeSrc}
+            className="w-full h-full border-0"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+            title="Preview"
+            onLoad={handleIframeLoad}
+          />
+          
+          {isLoading && (
+            <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <RiRefreshLine className="h-5 w-5 animate-spin" />
+                <span className="text-sm">Loading...</span>
+              </div>
+            </div>
+          )}
+          
+          {isSelectMode && (
+            <div 
+              className="absolute inset-0 cursor-crosshair"
+              style={{ pointerEvents: 'none' }}
+            />
+          )}
+        </div>
+
+        {showConsole && (
+          <div 
+            className="border-t flex flex-col"
+            style={{ 
+              borderColor: 'var(--interactive-border)',
+              height: consoleHeight,
+              minHeight: 100,
+              maxHeight: 500,
+            }}
+          >
+            <div 
+              className="h-1 cursor-ns-resize hover:bg-primary/20 transition-colors"
+              onMouseDown={handleConsoleResizeStart}
+            />
+            <div 
+              className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30"
+              style={{ borderColor: 'var(--interactive-border)' }}
+            >
+              <div className="flex items-center gap-2">
+                <RiTerminalBoxLine className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">Console</span>
+                {consoleEntries.length > 0 && (
+                  <span className="text-xs text-muted-foreground/70">
+                    ({consoleEntries.length})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={clearConsole}
+                      className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                      aria-label="Clear console"
+                    >
+                      <RiDeleteBinLine className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear console</TooltipContent>
+                </Tooltip>
+                <Tooltip delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={toggleConsole}
+                      className="h-6 w-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                      aria-label="Collapse console"
+                    >
+                      <RiArrowDownSLine className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Collapse console</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto font-mono text-xs p-2 space-y-0.5">
+              {consoleEntries.length === 0 ? (
+                <div className="text-muted-foreground/50 text-center py-4">
+                  Console output will appear here
+                </div>
+              ) : (
+                consoleEntries.map(entry => (
+                  <div 
+                    key={entry.id}
+                    className={cn('py-0.5 px-1 rounded hover:bg-muted/30', getConsoleEntryColor(entry.level))}
+                  >
+                    <span className="text-muted-foreground/50 mr-2">
+                      {new Date(entry.timestamp).toLocaleTimeString()}
+                    </span>
+                    <span className="opacity-50 mr-1">[{entry.level}]</span>
+                    {entry.message}
+                  </div>
+                ))
+              )}
+              <div ref={consoleEndRef} />
             </div>
           </div>
-        )}
-        
-        {isSelectMode && (
-          <div 
-            className="absolute inset-0 cursor-crosshair"
-            style={{ pointerEvents: 'none' }}
-          />
         )}
       </div>
     </div>

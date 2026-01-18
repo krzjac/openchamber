@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useUIStore } from '@/stores/useUIStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
 import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
@@ -53,14 +54,21 @@ const TAB_LABELS_MIN_WIDTH = 940;
 
 interface SettingsViewProps {
   onClose?: () => void;
-  /** Force mobile layout regardless of device detection */
   forceMobile?: boolean;
+  integrated?: boolean;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile, integrated }) => {
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
-  const [activeTab, setActiveTab] = React.useState<SidebarSection>('settings');
+  
+  const activeSettingsTabFromStore = useUIStore((s) => s.activeSettingsTab);
+  const setActiveSettingsTabInStore = useUIStore((s) => s.setActiveSettingsTab);
+  
+  const [localActiveTab, setLocalActiveTab] = React.useState<SidebarSection>('settings');
+  
+  const activeTab = integrated ? activeSettingsTabFromStore : localActiveTab;
+  const setActiveTab = integrated ? setActiveSettingsTabInStore : setLocalActiveTab;
   const [selectedOpenChamberSection, setSelectedOpenChamberSection] = React.useState<OpenChamberSection>('visual');
   // Mobile drill-down state: show page content instead of sidebar
   const [showMobilePageContent, setShowMobilePageContent] = React.useState(false);
@@ -153,10 +161,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const showTabLabels = containerWidth === 0 || containerWidth >= TAB_LABELS_MIN_WIDTH;
 
+  const loadedTabsRef = React.useRef<Map<string, string | null>>(new Map());
+
   React.useEffect(() => {
-    // Force reload when activeProject changes to ensure scopes update
+    const cacheKey = `${activeTab}:${activeProjectId ?? 'global'}`;
+    const lastLoaded = loadedTabsRef.current.get(activeTab);
+    
+    if (lastLoaded === cacheKey) {
+      return;
+    }
+
+    loadedTabsRef.current.set(activeTab, cacheKey);
+
     if (activeTab === 'agents') {
-      // Small delay to allow store state to propagate if needed
       setTimeout(() => void useAgentsStore.getState().loadAgents(), 0);
       return;
     }
@@ -255,9 +272,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const handleTabChange = React.useCallback((tab: SidebarSection) => {
     setActiveTab(tab);
-    // Reset mobile drill-down state when changing tabs
     setShowMobilePageContent(false);
-  }, []);
+  }, [setActiveTab]);
 
   // Handle mobile sidebar item selection (drill-down to page)
   const handleMobileSidebarClick = React.useCallback(() => {
@@ -329,17 +345,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   return (
     <div ref={containerRef} className={cn('flex h-full flex-col overflow-hidden', isDesktopApp ? 'bg-transparent' : 'bg-background')}>
-      {/* Header with tabs and close button */}
-      <div
-        onMouseDown={!isMobile ? handleDragStart : undefined}
-        className={cn(
-          'flex select-none items-center justify-between border-b',
-          isMobile ? 'h-auto px-3 py-2' : 'app-region-drag h-12',
-          !isMobile && desktopPaddingClass,
-          isDesktopApp ? 'bg-background' : 'bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80'
-        )}
-        style={{ borderColor: 'var(--interactive-border)' }}
-      >
+      {!integrated && (
+        <div
+          onMouseDown={!isMobile ? handleDragStart : undefined}
+          className={cn(
+            'flex select-none items-center justify-between border-b',
+            isMobile ? 'h-auto px-3 py-2' : 'app-region-drag h-12',
+            !isMobile && desktopPaddingClass,
+            isDesktopApp ? 'bg-background' : 'bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80'
+          )}
+          style={{ borderColor: 'var(--interactive-border)' }}
+        >
         {/* Mobile: back button when drilling down */}
         {isMobile && showMobilePageContent && (
           <button
@@ -487,7 +503,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
             )}
           </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Content area */}
       <div className="flex flex-1 overflow-hidden">

@@ -15,6 +15,7 @@ import {
   RiArrowUpSLine,
   RiBrainAi3Line,
   RiCloseCircleLine,
+  RiCloseLine,
   RiCodeLine,
   RiCommandLine,
   RiFolder6Line,
@@ -26,6 +27,7 @@ import {
   RiTerminalBoxLine,
   RiText,
   RiTimeLine,
+  RiWindow2Line,
 } from "@remixicon/react";
 import { getModifierLabel } from "@/lib/utils";
 
@@ -144,6 +146,21 @@ export const HelpDialog: React.FC = () => {
           keys: ["Esc + Esc"],
           description: "Abort active run (double press)",
           icon: RiCloseCircleLine,
+        },
+      ],
+    },
+    {
+      category: "Tab Management",
+      items: [
+        {
+          keys: [`${mod} + 1-9`],
+          description: "Switch to tab by number (in focused pane)",
+          icon: RiWindow2Line,
+        },
+        {
+          keys: [`${mod} + W`],
+          description: "Close active tab",
+          icon: RiCloseLine,
         },
       ],
     },

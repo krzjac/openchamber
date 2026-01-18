@@ -188,6 +188,11 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.queueModeEnabled === 'boolean' && settings.queueModeEnabled !== queueStore.queueModeEnabled) {
     queueStore.setQueueMode(settings.queueModeEnabled);
   }
+  if (typeof settings.queueSendBehavior === 'string' && 
+      (settings.queueSendBehavior === 'all' || settings.queueSendBehavior === 'first-only') &&
+      settings.queueSendBehavior !== queueStore.queueSendBehavior) {
+    queueStore.setQueueSendBehavior(settings.queueSendBehavior);
+  }
 };
 
 const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
@@ -271,6 +276,10 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.queueModeEnabled === 'boolean') {
     result.queueModeEnabled = candidate.queueModeEnabled;
+  }
+  if (typeof candidate.queueSendBehavior === 'string' && 
+      (candidate.queueSendBehavior === 'all' || candidate.queueSendBehavior === 'first-only')) {
+    result.queueSendBehavior = candidate.queueSendBehavior;
   }
 
   const skillCatalogs = sanitizeSkillCatalogs(candidate.skillCatalogs);

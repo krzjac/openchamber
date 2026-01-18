@@ -37,11 +37,11 @@ export const SettingsSidebarHeader: React.FC<SettingsSidebarHeaderProps> = ({
   return (
     <div
       className={cn(
-        'border-b px-3',
-        isMobile ? 'mt-2 py-3' : 'py-3'
+        'flex items-center border-b px-3 h-12 min-h-12',
+        isMobile && 'mt-2'
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-1 items-center justify-between gap-2">
         <span className="typography-meta text-muted-foreground">
           {label} {count}
         </span>

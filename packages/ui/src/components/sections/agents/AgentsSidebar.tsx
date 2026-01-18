@@ -331,8 +331,8 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
 
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className={cn('border-b px-3', isMobile ? 'mt-2 py-3' : 'py-3')}>
-        <div className="flex items-center justify-between gap-2">
+      <div className={cn('flex items-center border-b px-3 h-12 min-h-12', isMobile && 'mt-2')}>
+        <div className="flex flex-1 items-center justify-between gap-2">
           <span className="typography-meta text-muted-foreground">Total {visibleAgents.length}</span>
           <Button
             type="button"

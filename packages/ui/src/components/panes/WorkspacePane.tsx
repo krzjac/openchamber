@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/useSessionStore';
 import { cn } from '@/lib/utils';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { PaneTabBar } from './PaneTabBar';
+import { TabContextProvider } from '@/contexts/TabContext';
 
 import { ChatView } from '@/components/views/ChatView';
 import { DiffView } from '@/components/views/DiffView';
@@ -28,6 +29,8 @@ export const WorkspacePane: React.FC<WorkspacePaneProps> = ({
   style,
   isLastPane = false,
 }) => {
+  const resolvedWorktreeId = worktreeId ?? 'global';
+  
   const {
     leftPane,
     rightPane,
@@ -38,6 +41,7 @@ export const WorkspacePane: React.FC<WorkspacePaneProps> = ({
     addTab,
     openChatSession,
     moveTab,
+    updateTabMetadata,
   } = usePanes(worktreeId);
 
   const { setCurrentSession, createSession } = useSessionStore();
@@ -167,6 +171,13 @@ export const WorkspacePane: React.FC<WorkspacePaneProps> = ({
     return tab;
   }, [paneState.activeTabId, paneState.tabs]);
 
+  const handleUpdateTabMetadata = useCallback(
+    (tabId: string) => (metadata: Record<string, unknown>) => {
+      updateTabMetadata(paneId, tabId, metadata);
+    },
+    [paneId, updateTabMetadata]
+  );
+
   const renderContent = useCallback((tab: PaneTab | null) => {
     if (!tab) {
       return (
@@ -176,29 +187,47 @@ export const WorkspacePane: React.FC<WorkspacePaneProps> = ({
       );
     }
 
-    switch (tab.type) {
-      case 'chat':
-        return <ChatView />;
-      case 'diff':
-        return <DiffView />;
-      case 'files':
-        return <FilesView />;
-      case 'terminal':
-        return <TerminalView />;
-      case 'git':
-        return <GitView />;
-      case 'todo':
-        return <TodoView />;
-      case 'preview':
-        return <PreviewView />;
-      default:
-        return (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <p className="text-sm">Unknown tab type: {tab.type}</p>
-          </div>
-        );
+    const content = (() => {
+      switch (tab.type) {
+        case 'chat':
+          return <ChatView />;
+        case 'diff':
+          return <DiffView />;
+        case 'files':
+          return <FilesView />;
+        case 'terminal':
+          return <TerminalView />;
+        case 'git':
+          return <GitView />;
+        case 'todo':
+          return <TodoView />;
+        case 'preview':
+          return <PreviewView />;
+        default:
+          return (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <p className="text-sm">Unknown tab type: {tab.type}</p>
+            </div>
+          );
+      }
+    })();
+
+    const tabTypesWithPerTabState: PaneTabType[] = ['preview'];
+    if (tabTypesWithPerTabState.includes(tab.type)) {
+      return (
+        <TabContextProvider
+          paneId={paneId}
+          tab={tab}
+          worktreeId={resolvedWorktreeId}
+          updateMetadata={handleUpdateTabMetadata(tab.id)}
+        >
+          {content}
+        </TabContextProvider>
+      );
     }
-  }, []);
+
+    return content;
+  }, [paneId, resolvedWorktreeId, handleUpdateTabMetadata]);
 
   return (
     <div
