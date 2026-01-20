@@ -1,5 +1,6 @@
 import React from 'react';
-import { RiAlertLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCheckboxCircleLine, RiCircleLine, RiCloseLine, RiCommandLine, RiDeleteBinLine, RiRestartLine } from '@remixicon/react';
+import { RiAlertLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCheckboxCircleLine, RiCircleLine, RiCloseLine, RiCommandLine, RiDeleteBinLine, RiFileCopyLine, RiRestartLine } from '@remixicon/react';
+import { toast } from 'sonner';
 
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -13,6 +14,12 @@ import { TerminalViewport, type TerminalController } from '@/components/terminal
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useDeviceInfo } from '@/lib/device';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useTabContext } from '@/contexts/useTabContext';
@@ -434,6 +441,63 @@ export const TerminalView: React.FC = () => {
         }
     }, [clearBuffer, sessionKey, setConnectionError, terminal]);
 
+    const extractTerminalText = React.useCallback(() => {
+        return bufferChunks.map((chunk) => chunk.data).join('');
+    }, [bufferChunks]);
+
+    const handleCopyAll = React.useCallback(async () => {
+        const text = extractTerminalText();
+        if (!text) {
+            toast.error('Nothing to copy');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success('Copied terminal output');
+        } catch {
+            toast.error('Failed to copy');
+        }
+    }, [extractTerminalText]);
+
+    const handleCopyLast50 = React.useCallback(async () => {
+        const text = extractTerminalText();
+        if (!text) {
+            toast.error('Nothing to copy');
+            return;
+        }
+        const lines = text.split('\n');
+        const last50 = lines.slice(-50).join('\n');
+        try {
+            await navigator.clipboard.writeText(last50);
+            toast.success('Copied last 50 lines');
+        } catch {
+            toast.error('Failed to copy');
+        }
+    }, [extractTerminalText]);
+
+    const handleCopyDeduplicated = React.useCallback(async () => {
+        const text = extractTerminalText();
+        if (!text) {
+            toast.error('Nothing to copy');
+            return;
+        }
+        const lines = text.split('\n');
+        const deduplicated: string[] = [];
+        let prevLine = '';
+        for (const line of lines) {
+            if (line !== prevLine) {
+                deduplicated.push(line);
+                prevLine = line;
+            }
+        }
+        try {
+            await navigator.clipboard.writeText(deduplicated.join('\n'));
+            toast.success('Copied with duplicates filtered');
+        } catch {
+            toast.error('Failed to copy');
+        }
+    }, [extractTerminalText]);
+
     const handleViewportInput = React.useCallback(
         (data: string) => {
             if (!data) {
@@ -705,6 +769,32 @@ export const TerminalView: React.FC = () => {
                             <RiRestartLine size={16} className={cn((isConnecting || isRestarting) && 'animate-spin')} />
                             Restart
                         </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-7 px-2 py-0"
+                                    disabled={!bufferLength}
+                                    title="Copy terminal output"
+                                    type="button"
+                                >
+                                    <RiFileCopyLine size={16} />
+                                    Copy
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={handleCopyAll}>
+                                    Copy all
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={handleCopyLast50}>
+                                    Copy last 50 lines
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={handleCopyDeduplicated}>
+                                    Copy (deduplicated)
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </div>
                 {isMobile ? (
