@@ -139,10 +139,15 @@ export const useAutoReviewStore = create<AutoReviewStore>()(
           const checkName = check.name || check.context || '';
           if (!checkName) continue;
 
-          const conclusion = check.conclusion?.toLowerCase();
           const status = check.status?.toLowerCase();
+          const isCompleted = status === 'completed';
+          if (!isCompleted) continue;
+
+          const conclusion = check.conclusion?.toLowerCase();
+          const state = check.state?.toLowerCase();
           const isFailed = conclusion === 'failure' || conclusion === 'error' || 
-              status === 'failure' || status === 'error';
+              conclusion === 'timed_out' || conclusion === 'startup_failure' ||
+              state === 'failure' || state === 'error';
           
           if (!isFailed) continue;
 
@@ -351,12 +356,15 @@ export const useHasPendingItems = () => {
     const failedChecks = checks.filter((c) => {
       const checkName = c.name || c.context || '';
       if (!checkName) return false;
+      const status = c.status?.toLowerCase();
+      if (status !== 'completed') return false;
       const isInfraCheck = INFRASTRUCTURE_CHECK_PATTERNS.some((p) => p.test(checkName));
       if (isInfraCheck) return false;
       const conclusion = c.conclusion?.toLowerCase();
-      const status = c.status?.toLowerCase();
+      const checkState = c.state?.toLowerCase();
       return conclusion === 'failure' || conclusion === 'error' || 
-             status === 'failure' || status === 'error';
+             conclusion === 'timed_out' || conclusion === 'startup_failure' ||
+             checkState === 'failure' || checkState === 'error';
     });
     
     const threads = state.lastPrStatus.reviewThreads || [];
@@ -383,12 +391,15 @@ export const usePendingCount = () => {
       const failedChecks = checks.filter((c) => {
         const checkName = c.name || c.context || '';
         if (!checkName) return false;
+        const status = c.status?.toLowerCase();
+        if (status !== 'completed') return false;
         const isInfraCheck = INFRASTRUCTURE_CHECK_PATTERNS.some((p) => p.test(checkName));
         if (isInfraCheck) return false;
         const conclusion = c.conclusion?.toLowerCase();
-        const status = c.status?.toLowerCase();
+        const checkState = c.state?.toLowerCase();
         return conclusion === 'failure' || conclusion === 'error' || 
-               status === 'failure' || status === 'error';
+               conclusion === 'timed_out' || conclusion === 'startup_failure' ||
+               checkState === 'failure' || checkState === 'error';
       });
       
       const threads = state.lastPrStatus.reviewThreads || [];
