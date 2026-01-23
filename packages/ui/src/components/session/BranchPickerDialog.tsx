@@ -340,9 +340,6 @@ export function BranchPickerDialog({
                 const isLoading = activeTab === 'branches' ? data?.loading : data?.prsLoading;
                 const error = activeTab === 'branches' ? data?.error : data?.prsError;
 
-                // For PRs tab, show if we have GitHub info
-                const showInPRsTab = activeTab === 'prs' && data?.githubOwner;
-
                 if (activeTab === 'prs' && !data?.githubOwner && !data?.prsLoading) {
                   // Skip projects without GitHub connection in PRs tab
                   return null;
