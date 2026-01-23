@@ -632,7 +632,7 @@ async fn resolve_creatable_path(
             if !workspace_roots.is_empty()
                 && !workspace_roots
                     .iter()
-                    .any(|root| canonical_parent.starts_with(root))
+                    .any(|root| canonical_parent.starts_with(root) || root.starts_with(&canonical_parent))
             {
                 return Err(FsCommandError::OutsideWorkspace);
             }
