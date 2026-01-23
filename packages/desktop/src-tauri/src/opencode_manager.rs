@@ -124,12 +124,41 @@ impl OpenCodeManager {
         }
 
         let mut guard = self.child.lock().await;
+
+        // Check if a child process is already running
         if let Some(child) = guard.as_mut() {
-            if child.try_wait()?.is_none() && self.is_ready.load(Ordering::SeqCst) {
+            if child.try_wait()?.is_none() {
+                // Child is running - if already ready, return immediately
+                if self.is_ready.load(Ordering::SeqCst) {
+                    return Ok(());
+                }
+                // Child is running but not ready yet (e.g., watchdog spawned while restart was sleeping)
+                // Don't spawn a new one - just wait for this one to become ready
+                drop(guard);
+                info!("[desktop:opencode] child already running, waiting for ready...");
+
+                // Wait for port detection if needed
+                if self.desired_port == 0 && self.current_port().is_none() {
+                    self.wait_for_port_detection().await?;
+                }
+
+                // Detect API prefix if not already detected
+                if self.api_prefix().is_empty() {
+                    let _ = self.detect_api_prefix().await;
+                }
+
+                // Wait for OpenCode to become ready
+                self.wait_for_ready().await?;
+
+                self.is_ready.store(true, Ordering::SeqCst);
+                if let Some(port) = self.current_port() {
+                    info!("[desktop:opencode] ready on port {port}");
+                }
                 return Ok(());
             }
         }
 
+        // No running child - spawn a new one
         self.is_ready.store(false, Ordering::SeqCst);
         let child = self.spawn_process().await?;
         *guard = Some(child);
