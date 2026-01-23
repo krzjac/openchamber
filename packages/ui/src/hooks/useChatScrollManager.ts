@@ -14,29 +14,13 @@ interface ChatMessageRecord {
     parts: Part[];
 }
 
-interface SessionMemoryState {
-    viewportAnchor: number;
-    isStreaming: boolean;
-    lastAccessedAt: number;
-    backgroundMessageCount: number;
-    totalAvailableMessages?: number;
-    hasMoreAbove?: boolean;
-    streamStartTime?: number;
-    isZombie?: boolean;
-}
-
 
 interface UseChatScrollManagerOptions {
     currentSessionId: string | null;
     sessionMessages: ChatMessageRecord[];
-    sessionPermissions: unknown[];
-    streamingMessageId: string | null;
-    sessionMemoryState: Map<string, SessionMemoryState>;
     updateViewportAnchor: (sessionId: string, anchor: number) => void;
     isSyncing: boolean;
     isMobile: boolean;
-    messageStreamStates: Map<string, unknown>;
-    trimToViewportWindow: (sessionId: string, targetSize?: number) => void;
 }
 
 export interface AnimationHandlers {

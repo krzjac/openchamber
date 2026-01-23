@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef, useMemo } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import {
   RiAddLine,
   RiArrowDownSLine,
@@ -34,22 +34,20 @@ interface DraggableTabItemProps {
   isActive: boolean;
   isDragOver: boolean;
   isDragging: boolean;
-  displayTitle: string;
-  onActivate: () => void;
-  onClose: () => void;
+  onActivate: (tabId: string) => void;
+  onClose: (tabId: string) => void;
   onDragStart: (e: React.DragEvent, tabId: string) => void;
-  onDragOver: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent, tabId: string) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent, targetTabId: string) => void;
 }
 
-const DraggableTabItem: React.FC<DraggableTabItemProps> = ({
+const DraggableTabItem = React.memo<DraggableTabItemProps>(({
   tab,
   paneId,
   isActive,
   isDragOver,
   isDragging,
-  displayTitle,
   onActivate,
   onClose,
   onDragStart,
@@ -63,12 +61,28 @@ const DraggableTabItem: React.FC<DraggableTabItemProps> = ({
   const showLoader = tab.type === 'chat' && isStreaming;
   const isClosable = tab.type !== 'appRunner';
 
+  // Look up title directly from store - only re-renders when THIS session's title changes
+  const displayTitle = useSessionStore(
+    useCallback((s) => {
+      if (tab.type === 'chat' && tab.sessionId) {
+        const session = s.sessions.find((sess) => sess.id === tab.sessionId);
+        const title = session?.title;
+        if (title && title.trim().length > 0) return title;
+      }
+      return tab.title || getTabLabel(tab.type);
+    }, [tab.type, tab.sessionId, tab.title])
+  );
+
+  const handleActivate = useCallback(() => {
+    onActivate(tab.id);
+  }, [onActivate, tab.id]);
+
   const handleClose = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      onClose();
+      onClose(tab.id);
     },
-    [onClose]
+    [onClose, tab.id]
   );
 
   const handleDragStart = useCallback(
@@ -83,14 +97,28 @@ const DraggableTabItem: React.FC<DraggableTabItemProps> = ({
     [tab, paneId, onDragStart]
   );
 
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      onDragOver(e, tab.id);
+    },
+    [onDragOver, tab.id]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      onDrop(e, tab.id);
+    },
+    [onDrop, tab.id]
+  );
+
   return (
     <div
-      onClick={onActivate}
+      onClick={handleActivate}
       draggable={isClosable}
       onDragStart={isClosable ? handleDragStart : undefined}
-      onDragOver={onDragOver}
+      onDragOver={handleDragOver}
       onDragLeave={onDragLeave}
-      onDrop={(e) => onDrop(e, tab.id)}
+      onDrop={handleDrop}
       className={cn(
         'group relative flex h-12 items-center gap-1.5 px-3 cursor-pointer select-none app-region-no-drag',
         'border-r transition-colors',
@@ -127,7 +155,7 @@ const DraggableTabItem: React.FC<DraggableTabItemProps> = ({
       )}
     </div>
   );
-};
+});
 
 interface NewTabMenuProps {
   onSelect: (type: PaneTabType) => void;
@@ -217,8 +245,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
   const addButtonRef = useRef<HTMLButtonElement>(null);
   
   const toggleHelpDialog = useUIStore((state) => state.toggleHelpDialog);
-  const sessions = useSessionStore((s) => s.sessions);
-  
+
   const appRunnerEnabled = useAppRunnerStore((s) => s.enabled);
   const appRunnerStatus = useAppRunnerStore((s) => s.status);
   const appRunnerUrls = useAppRunnerStore((s) => s.detectedUrls);
@@ -232,26 +259,6 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
   // and it interferes with HTML5 drag-and-drop
   const isFullscreen = useFullscreen();
 
-  const sessionTitleMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const session of sessions) {
-      if (session.id && session.title) {
-        map.set(session.id, session.title);
-      }
-    }
-    return map;
-  }, [sessions]);
-
-  const getDisplayTitle = useCallback((tab: PaneTab): string => {
-    if (tab.type === 'chat' && tab.sessionId) {
-      const sessionTitle = sessionTitleMap.get(tab.sessionId);
-      if (sessionTitle && sessionTitle.trim().length > 0) {
-        return sessionTitle;
-      }
-    }
-    return tab.title || getTabLabel(tab.type);
-  }, [sessionTitleMap]);
-  
   const actionButtonClass = cn(
     'flex h-12 w-12 shrink-0 items-center justify-center',
     'text-muted-foreground hover:text-foreground hover:bg-muted/50',
@@ -421,11 +428,10 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             isActive={tab.id === activeTabId}
             isDragOver={dragOverTabId === tab.id}
             isDragging={draggingTabId === tab.id}
-            displayTitle={getDisplayTitle(tab)}
-            onActivate={() => onActivateTab(tab.id)}
-            onClose={() => onCloseTab(tab.id)}
+            onActivate={onActivateTab}
+            onClose={onCloseTab}
             onDragStart={handleDragStart}
-            onDragOver={(e) => handleTabDragOver(e, tab.id)}
+            onDragOver={handleTabDragOver}
             onDragLeave={handleTabDragLeave}
             onDrop={handleTabDrop}
           />

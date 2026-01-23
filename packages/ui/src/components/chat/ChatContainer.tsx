@@ -14,35 +14,76 @@ import { Button } from '@/components/ui/button';
 import { OverlayScrollbar } from '@/components/ui/OverlayScrollbar';
 import { TimelineDialog } from './TimelineDialog';
 
+const EMPTY_MESSAGES: never[] = [];
+const EMPTY_PERMISSIONS: never[] = [];
+const EMPTY_QUESTIONS: never[] = [];
+
 export const ChatContainer: React.FC = () => {
-    const {
-        currentSessionId,
-        messages,
-        permissions,
-        questions,
-        streamingMessageIds,
-        isLoading,
-        loadMessages,
-        loadMoreMessages,
-        updateViewportAnchor,
-        sessionMemoryState,
-        openNewSessionDraft,
-        isSyncing,
-        messageStreamStates,
-        trimToViewportWindow,
-        sessionActivityPhase,
-        newSessionDraft,
-    } = useSessionStore();
+    // Individual selectors - only re-render when specific fields change
+    const currentSessionId = useSessionStore((s) => s.currentSessionId);
+    const isLoading = useSessionStore((s) => s.isLoading);
+    const isSyncing = useSessionStore((s) => s.isSyncing);
+    const newSessionDraft = useSessionStore((s) => s.newSessionDraft);
 
-    const {
-        isTimelineDialogOpen,
-        setTimelineDialogOpen,
-    } = useUIStore();
+    // Functions are stable references in Zustand
+    const loadMessages = useSessionStore((s) => s.loadMessages);
+    const loadMoreMessages = useSessionStore((s) => s.loadMoreMessages);
+    const updateViewportAnchor = useSessionStore((s) => s.updateViewportAnchor);
+    const openNewSessionDraft = useSessionStore((s) => s.openNewSessionDraft);
 
-    const streamingMessageId = React.useMemo(() => {
-        if (!currentSessionId) return null;
-        return streamingMessageIds.get(currentSessionId) ?? null;
-    }, [currentSessionId, streamingMessageIds]);
+    // Per-session selectors - only re-render when THIS session's data changes
+    const sessionMessages = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return EMPTY_MESSAGES;
+            return s.messages.get(s.currentSessionId) ?? EMPTY_MESSAGES;
+        }, [])
+    );
+
+    const sessionPermissions = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return EMPTY_PERMISSIONS;
+            return s.permissions.get(s.currentSessionId) ?? EMPTY_PERMISSIONS;
+        }, [])
+    );
+
+    const sessionQuestions = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return EMPTY_QUESTIONS;
+            return s.questions.get(s.currentSessionId) ?? EMPTY_QUESTIONS;
+        }, [])
+    );
+
+    const streamingMessageId = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return null;
+            return s.streamingMessageIds.get(s.currentSessionId) ?? null;
+        }, [])
+    );
+
+    const sessionActivityPhase = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return 'idle' as const;
+            return s.sessionActivityPhase?.get(s.currentSessionId) ?? ('idle' as const);
+        }, [])
+    );
+
+    const sessionMemoryState = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return null;
+            return s.sessionMemoryState.get(s.currentSessionId) ?? null;
+        }, [])
+    );
+
+    // Whether messages have been loaded for the current session (entry exists in Map)
+    const hasMessagesEntry = useSessionStore(
+        React.useCallback((s) => {
+            if (!s.currentSessionId) return false;
+            return s.messages.has(s.currentSessionId);
+        }, [])
+    );
+
+    const isTimelineDialogOpen = useUIStore((s) => s.isTimelineDialogOpen);
+    const setTimelineDialogOpen = useUIStore((s) => s.setTimelineDialogOpen);
 
     const { isMobile } = useDeviceInfo();
     const draftOpen = Boolean(newSessionDraft?.open);
@@ -52,19 +93,6 @@ export const ChatContainer: React.FC = () => {
             openNewSessionDraft();
         }
     }, [currentSessionId, draftOpen, openNewSessionDraft]);
-
-    const sessionMessages = React.useMemo(() => {
-
-        return currentSessionId ? messages.get(currentSessionId) || [] : [];
-    }, [currentSessionId, messages]);
-
-    const sessionPermissions = React.useMemo(() => {
-        return currentSessionId ? permissions.get(currentSessionId) || [] : [];
-    }, [currentSessionId, permissions]);
-
-    const sessionQuestions = React.useMemo(() => {
-        return currentSessionId ? questions.get(currentSessionId) || [] : [];
-    }, [currentSessionId, questions]);
 
     const sessionBlockingCards = React.useMemo(() => {
         return [...sessionPermissions, ...sessionQuestions];
@@ -81,23 +109,12 @@ export const ChatContainer: React.FC = () => {
     } = useChatScrollManager({
         currentSessionId,
         sessionMessages,
-        streamingMessageId,
-        sessionMemoryState,
         updateViewportAnchor,
         isSyncing,
         isMobile,
-        messageStreamStates,
-        sessionPermissions: sessionBlockingCards,
-        trimToViewportWindow,
     });
 
-    const memoryState = React.useMemo(() => {
-        if (!currentSessionId) {
-            return null;
-        }
-        return sessionMemoryState.get(currentSessionId) ?? null;
-    }, [currentSessionId, sessionMemoryState]);
-    const hasMoreAbove = Boolean(memoryState?.hasMoreAbove);
+    const hasMoreAbove = Boolean(sessionMemoryState?.hasMoreAbove);
     const [isLoadingOlder, setIsLoadingOlder] = React.useState(false);
     React.useEffect(() => {
         setIsLoadingOlder(false);
@@ -156,12 +173,9 @@ export const ChatContainer: React.FC = () => {
             return;
         }
 
-        const hasSessionMessages = messages.has(currentSessionId);
-        const existingMessages = hasSessionMessages ? messages.get(currentSessionId) ?? [] : [];
-
         // If we already have messages and already scrolled for this session, do nothing
         // This prevents re-scrolling when other sessions' messages update
-        if (existingMessages.length > 0) {
+        if (sessionMessages.length > 0) {
             if (scrolledSessionsRef.current.has(currentSessionId)) {
                 return; // Already scrolled for this session
             }
@@ -189,8 +203,7 @@ export const ChatContainer: React.FC = () => {
                 // Mark this session as scrolled
                 scrolledSessionsRef.current.add(currentSessionId);
 
-                const currentPhase = sessionActivityPhase?.get(currentSessionId) ?? 'idle';
-                const isActivePhase = currentPhase === 'busy' || currentPhase === 'cooldown';
+                const isActivePhase = sessionActivityPhase === 'busy' || sessionActivityPhase === 'cooldown';
                 // When pinned and active, scroll is already maintained automatically
                 const shouldSkipScroll = isActivePhase && isPinned;
 
@@ -210,7 +223,7 @@ export const ChatContainer: React.FC = () => {
         };
 
         void load();
-    }, [currentSessionId, isPinned, loadMessages, messages, scrollToBottom, sessionActivityPhase]);
+    }, [currentSessionId, isPinned, loadMessages, sessionMessages, scrollToBottom, sessionActivityPhase]);
 
     // Clear the scrolled state when session changes to allow re-scroll on next visit
     React.useEffect(() => {
@@ -257,7 +270,6 @@ export const ChatContainer: React.FC = () => {
     }
 
     if (isLoading && sessionMessages.length === 0 && !streamingMessageId) {
-        const hasMessagesEntry = messages.has(currentSessionId);
         if (!hasMessagesEntry) {
             return (
                 <div

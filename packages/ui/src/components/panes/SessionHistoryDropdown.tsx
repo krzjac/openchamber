@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, memo } from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import {
   RiChat4Line,
@@ -43,7 +43,7 @@ interface SessionHistoryItemProps {
   onSelect: (session: Session) => void;
 }
 
-const SessionHistoryItem: React.FC<SessionHistoryItemProps> = ({ session, onSelect }) => {
+const SessionHistoryItem = memo<SessionHistoryItemProps>(({ session, onSelect }) => {
   // Use per-session hook - only re-renders when THIS session's phase changes
   const { isWorking: isStreaming } = useSessionActivity(session.id);
   const additions = session.summary?.additions ?? 0;
@@ -51,10 +51,14 @@ const SessionHistoryItem: React.FC<SessionHistoryItemProps> = ({ session, onSele
   const hasChanges = additions > 0 || deletions > 0;
   const updated = session.time?.updated ?? session.time?.created;
 
+  const handleClick = useCallback(() => {
+    onSelect(session);
+  }, [onSelect, session]);
+
   return (
     <button
       type="button"
-      onClick={() => onSelect(session)}
+      onClick={handleClick}
       className="w-full flex flex-col gap-0.5 rounded-md px-2 py-2 text-left hover:bg-muted/50 transition-colors"
     >
       <div className="flex items-center gap-2">
@@ -78,7 +82,7 @@ const SessionHistoryItem: React.FC<SessionHistoryItemProps> = ({ session, onSele
       </div>
     </button>
   );
-};
+});
 
 interface SessionHistoryDropdownProps {
   paneId: PaneId;
