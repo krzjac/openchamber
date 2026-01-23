@@ -15,12 +15,15 @@ import {
   RiAddLine,
   RiArrowRightSLine,
   RiLoader4Line,
+  RiGitPullRequestLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { getGitBranches, listGitWorktrees } from '@/lib/gitApi';
+import { getGitBranches, listGitWorktrees, getRemoteUrl, gitFetch } from '@/lib/gitApi';
 import type { GitBranch, GitWorktreeInfo } from '@/lib/api/types';
 import { createWorktreeSessionForBranch } from '@/lib/worktreeSessionCreator';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { parseGitHubRemoteUrl } from '@/lib/github-repos/utils';
+import type { PullRequest } from '@/lib/github-repos/types';
 
 interface Project {
   id: string;
@@ -41,7 +44,15 @@ interface ProjectBranchData {
   worktrees: GitWorktreeInfo[];
   loading: boolean;
   error: string | null;
+  // GitHub PR data
+  githubOwner: string | null;
+  githubRepo: string | null;
+  prs: PullRequest[];
+  prsLoading: boolean;
+  prsError: string | null;
 }
+
+type TabType = 'branches' | 'prs';
 
 export function BranchPickerDialog({
   open,
@@ -53,6 +64,7 @@ export function BranchPickerDialog({
   const [projectData, setProjectData] = React.useState<Map<string, ProjectBranchData>>(new Map());
   const [expandedProjects, setExpandedProjects] = React.useState<Set<string>>(new Set());
   const [creatingWorktree, setCreatingWorktree] = React.useState<string | null>(null);
+  const [activeTab, setActiveTab] = React.useState<TabType>('branches');
 
   React.useEffect(() => {
     if (!open) {
@@ -68,21 +80,85 @@ export function BranchPickerDialog({
     projects.forEach(async (project) => {
       setProjectData(prev => {
         const next = new Map(prev);
-        next.set(project.id, { branches: null, worktrees: [], loading: true, error: null });
+        next.set(project.id, {
+          branches: null,
+          worktrees: [],
+          loading: true,
+          error: null,
+          githubOwner: null,
+          githubRepo: null,
+          prs: [],
+          prsLoading: false,
+          prsError: null,
+        });
         return next;
       });
 
       try {
-        const [branches, worktrees] = await Promise.all([
+        const [branches, worktrees, remoteUrl] = await Promise.all([
           getGitBranches(project.path),
           listGitWorktrees(project.path),
+          getRemoteUrl(project.path, 'origin'),
         ]);
+
+        // Parse GitHub info from remote URL
+        const githubInfo = remoteUrl ? parseGitHubRemoteUrl(remoteUrl) : null;
 
         setProjectData(prev => {
           const next = new Map(prev);
-          next.set(project.id, { branches, worktrees, loading: false, error: null });
+          next.set(project.id, {
+            branches,
+            worktrees,
+            loading: false,
+            error: null,
+            githubOwner: githubInfo?.owner || null,
+            githubRepo: githubInfo?.repo || null,
+            prs: [],
+            prsLoading: !!githubInfo,
+            prsError: null,
+          });
           return next;
         });
+
+        // If we have GitHub info, fetch PRs
+        if (githubInfo) {
+          try {
+            const response = await fetch(`/api/github/${githubInfo.owner}/${githubInfo.repo}/prs`);
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: 'Failed to fetch PRs' }));
+              throw new Error(errorData.message || errorData.error || 'Failed to fetch PRs');
+            }
+            const data = await response.json();
+            const prs: PullRequest[] = (data.prs || []).filter((pr: PullRequest) => pr.state === 'open');
+
+            setProjectData(prev => {
+              const next = new Map(prev);
+              const existing = next.get(project.id);
+              if (existing) {
+                next.set(project.id, {
+                  ...existing,
+                  prs,
+                  prsLoading: false,
+                  prsError: null,
+                });
+              }
+              return next;
+            });
+          } catch (prErr) {
+            setProjectData(prev => {
+              const next = new Map(prev);
+              const existing = next.get(project.id);
+              if (existing) {
+                next.set(project.id, {
+                  ...existing,
+                  prsLoading: false,
+                  prsError: prErr instanceof Error ? prErr.message : 'Failed to load PRs',
+                });
+              }
+              return next;
+            });
+          }
+        }
       } catch (err) {
         setProjectData(prev => {
           const next = new Map(prev);
@@ -91,6 +167,11 @@ export function BranchPickerDialog({
             worktrees: [],
             loading: false,
             error: err instanceof Error ? err.message : 'Failed to load',
+            githubOwner: null,
+            githubRepo: null,
+            prs: [],
+            prsLoading: false,
+            prsError: null,
           });
           return next;
         });
@@ -124,10 +205,39 @@ export function BranchPickerDialog({
     }
   };
 
+  const handleCreateWorktreeFromPR = async (project: Project, pr: PullRequest) => {
+    const key = `${project.id}:pr-${pr.number}`;
+    setCreatingWorktree(key);
+
+    try {
+      // Fetch the latest remote refs first to ensure PR branch is available
+      await gitFetch(project.path, { remote: 'origin' });
+
+      // Create worktree using the PR's head branch
+      await createWorktreeSessionForBranch(project.path, pr.headRefName);
+      onOpenChange(false);
+    } catch (err) {
+      console.error('Failed to create worktree from PR:', err);
+    } finally {
+      setCreatingWorktree(null);
+    }
+  };
+
   const filterBranches = (branches: string[], query: string): string[] => {
     if (!query.trim()) return branches;
     const lowerQuery = query.toLowerCase();
     return branches.filter(b => b.toLowerCase().includes(lowerQuery));
+  };
+
+  const filterPRs = (prs: PullRequest[], query: string): PullRequest[] => {
+    if (!query.trim()) return prs;
+    const lowerQuery = query.toLowerCase();
+    return prs.filter(pr =>
+      pr.title.toLowerCase().includes(lowerQuery) ||
+      pr.headRefName.toLowerCase().includes(lowerQuery) ||
+      pr.author.toLowerCase().includes(lowerQuery) ||
+      `#${pr.number}`.includes(lowerQuery)
+    );
   };
 
   const gitRepoProjects = projects.filter(p => {
@@ -135,23 +245,65 @@ export function BranchPickerDialog({
     return data && !data.error && (data.loading || data.branches);
   });
 
+  // Check if any project has GitHub PRs
+  const hasAnyPRs = Array.from(projectData.values()).some(d => d.prs.length > 0 || d.prsLoading);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[70vh] flex flex-col overflow-hidden gap-3">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <RiGitBranchLine className="h-5 w-5" />
-            Branches & Worktrees
+            Branches & Pull Requests
           </DialogTitle>
           <DialogDescription>
-            Start a new worktree session from any local branch
+            Start a new worktree session from a local branch or pull request
           </DialogDescription>
         </DialogHeader>
+
+        {/* Tab navigation */}
+        <div className="flex items-center gap-1 border-b border-border flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('branches')}
+            className={cn(
+              'px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+              activeTab === 'branches'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <RiGitBranchLine className="h-4 w-4" />
+              Branches
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('prs')}
+            className={cn(
+              'px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+              activeTab === 'prs'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <RiGitPullRequestLine className="h-4 w-4" />
+              Pull Requests
+              {hasAnyPRs && (
+                <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full">
+                  {Array.from(projectData.values()).reduce((sum, d) => sum + d.prs.length, 0)}
+                </span>
+              )}
+            </span>
+          </button>
+        </div>
 
         <div className="relative flex-shrink-0">
           <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search branches..."
+            placeholder={activeTab === 'branches' ? 'Search branches...' : 'Search pull requests...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -171,12 +323,30 @@ export function BranchPickerDialog({
                 const branches = data?.branches;
                 const worktrees = data?.worktrees || [];
                 const worktreeBranches = new Set(worktrees.map(w => w.branch).filter(Boolean));
+                const prs = data?.prs || [];
 
                 const allBranches = branches?.all || [];
                 const filteredBranches = filterBranches(allBranches, searchQuery);
                 const localBranches = filteredBranches
                   .filter(b => !b.startsWith('remotes/'))
                   .filter(b => !worktreeBranches.has(b));
+
+                const filteredPRs = filterPRs(prs, searchQuery);
+
+                // Filter out PRs whose branch already has a worktree
+                const availablePRs = filteredPRs.filter(pr => !worktreeBranches.has(pr.headRefName));
+
+                const itemCount = activeTab === 'branches' ? localBranches.length : availablePRs.length;
+                const isLoading = activeTab === 'branches' ? data?.loading : data?.prsLoading;
+                const error = activeTab === 'branches' ? data?.error : data?.prsError;
+
+                // For PRs tab, show if we have GitHub info
+                const showInPRsTab = activeTab === 'prs' && data?.githubOwner;
+
+                if (activeTab === 'prs' && !data?.githubOwner && !data?.prsLoading) {
+                  // Skip projects without GitHub connection in PRs tab
+                  return null;
+                }
 
                 return (
                   <div key={project.id} className="rounded-md">
@@ -195,99 +365,171 @@ export function BranchPickerDialog({
                       <span className="font-medium text-sm truncate flex-1 text-left">
                         {project.label || project.normalizedPath.split('/').pop() || project.normalizedPath}
                       </span>
-                      {data?.loading && (
+                      {isLoading && (
                         <RiLoader4Line className="h-4 w-4 text-muted-foreground animate-spin" />
                       )}
-                      {branches && (
+                      {!isLoading && (
                         <span className="text-xs text-muted-foreground">
-                          {localBranches.length} branches
+                          {itemCount} {activeTab === 'branches' ? 'branches' : 'PRs'}
                         </span>
                       )}
                     </button>
                     {isExpanded && (
                       <div className="mt-1 space-y-1 pl-6">
-                        {data?.loading ? (
+                        {isLoading ? (
                           <div className="px-2 py-2 text-muted-foreground text-sm">
-                            Loading branches...
+                            Loading {activeTab === 'branches' ? 'branches' : 'pull requests'}...
                           </div>
-                        ) : data?.error ? (
+                        ) : error ? (
                           <div className="px-2 py-2 text-destructive text-sm">
-                            {data.error}
+                            {error}
                           </div>
-                        ) : localBranches.length === 0 ? (
-                          <div className="px-2 py-2 text-muted-foreground text-sm">
-                            {searchQuery ? 'No matching branches' : 'No branches found'}
-                          </div>
-                        ) : (
-                          localBranches.map((branchName) => {
-                            const branchDetails = branches?.branches[branchName];
-                            const isCurrent = branchDetails?.current;
-                            const isCreating = creatingWorktree === `${project.id}:${branchName}`;
+                        ) : activeTab === 'branches' ? (
+                          // Branches tab content
+                          localBranches.length === 0 ? (
+                            <div className="px-2 py-2 text-muted-foreground text-sm">
+                              {searchQuery ? 'No matching branches' : 'No branches found'}
+                            </div>
+                          ) : (
+                            localBranches.map((branchName) => {
+                              const branchDetails = branches?.branches[branchName];
+                              const isCurrent = branchDetails?.current;
+                              const isCreating = creatingWorktree === `${project.id}:${branchName}`;
 
-                            return (
-                              <div
-                                key={branchName}
-                                className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 rounded-md overflow-hidden"
-                              >
-                                <RiGitBranchLine className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                <div className="flex-1 min-w-0 overflow-hidden">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className={cn(
-                                      'text-sm truncate',
-                                      isCurrent && 'font-medium text-primary'
-                                    )}>
-                                      {branchName}
-                                    </span>
-                                    {isCurrent && (
-                                      <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap">
-                                        current
+                              return (
+                                <div
+                                  key={branchName}
+                                  className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 rounded-md overflow-hidden"
+                                >
+                                  <RiGitBranchLine className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                  <div className="flex-1 min-w-0 overflow-hidden">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className={cn(
+                                        'text-sm truncate',
+                                        isCurrent && 'font-medium text-primary'
+                                      )}>
+                                        {branchName}
                                       </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    {branchDetails?.commit && (
-                                      <span className="font-mono">
-                                        {branchDetails.commit.slice(0, 7)}
-                                      </span>
-                                    )}
-                                    {branchDetails?.ahead !== undefined && branchDetails.ahead > 0 && (
-                                      <span className="text-[color:var(--status-success)]">
-                                        ↑{branchDetails.ahead}
-                                      </span>
-                                    )}
-                                    {branchDetails?.behind !== undefined && branchDetails.behind > 0 && (
-                                      <span className="text-[color:var(--status-warning)]">
-                                        ↓{branchDetails.behind}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCreateWorktree(project, branchName)}
-                                      disabled={isCreating}
-                                      className="inline-flex h-7 px-2 items-center justify-center text-xs rounded-md bg-primary/10 hover:bg-primary/20 text-primary transition-colors disabled:opacity-50 flex-shrink-0"
-                                    >
-                                      {isCreating ? (
-                                        <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
-                                      ) : (
-                                        <>
-                                          <RiAddLine className="h-3.5 w-3.5 mr-1" />
-                                          Worktree
-                                        </>
+                                      {isCurrent && (
+                                        <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap">
+                                          current
+                                        </span>
                                       )}
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="left">
-                                    Create worktree for this branch
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            );
-                          })
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                      {branchDetails?.commit && (
+                                        <span className="font-mono">
+                                          {branchDetails.commit.slice(0, 7)}
+                                        </span>
+                                      )}
+                                      {branchDetails?.ahead !== undefined && branchDetails.ahead > 0 && (
+                                        <span className="text-[color:var(--status-success)]">
+                                          ↑{branchDetails.ahead}
+                                        </span>
+                                      )}
+                                      {branchDetails?.behind !== undefined && branchDetails.behind > 0 && (
+                                        <span className="text-[color:var(--status-warning)]">
+                                          ↓{branchDetails.behind}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateWorktree(project, branchName)}
+                                        disabled={isCreating}
+                                        className="inline-flex h-7 px-2 items-center justify-center text-xs rounded-md bg-primary/10 hover:bg-primary/20 text-primary transition-colors disabled:opacity-50 flex-shrink-0"
+                                      >
+                                        {isCreating ? (
+                                          <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <>
+                                            <RiAddLine className="h-3.5 w-3.5 mr-1" />
+                                            Worktree
+                                          </>
+                                        )}
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left">
+                                      Create worktree for this branch
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              );
+                            })
+                          )
+                        ) : (
+                          // PRs tab content
+                          !data?.githubOwner ? (
+                            <div className="px-2 py-2 text-muted-foreground text-sm">
+                              Not a GitHub repository
+                            </div>
+                          ) : availablePRs.length === 0 ? (
+                            <div className="px-2 py-2 text-muted-foreground text-sm">
+                              {searchQuery ? 'No matching pull requests' : 'No open pull requests'}
+                            </div>
+                          ) : (
+                            availablePRs.map((pr) => {
+                              const isCreating = creatingWorktree === `${project.id}:pr-${pr.number}`;
+
+                              return (
+                                <div
+                                  key={pr.number}
+                                  className="flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/30 rounded-md overflow-hidden"
+                                >
+                                  <RiGitPullRequestLine className={cn(
+                                    'h-4 w-4 flex-shrink-0',
+                                    pr.isDraft ? 'text-muted-foreground' : 'text-[color:var(--status-success)]'
+                                  )} />
+                                  <div className="flex-1 min-w-0 overflow-hidden">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className="text-sm truncate">
+                                        {pr.title}
+                                      </span>
+                                      {pr.isDraft && (
+                                        <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded flex-shrink-0 whitespace-nowrap">
+                                          draft
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                      <span className="font-medium">#{pr.number}</span>
+                                      <span>by {pr.author}</span>
+                                      <span className="text-[color:var(--status-success)]">+{pr.additions}</span>
+                                      <span className="text-[color:var(--status-error)]">-{pr.deletions}</span>
+                                      <span className="font-mono truncate">{pr.headRefName}</span>
+                                    </div>
+                                  </div>
+
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateWorktreeFromPR(project, pr)}
+                                        disabled={isCreating}
+                                        className="inline-flex h-7 px-2 items-center justify-center text-xs rounded-md bg-primary/10 hover:bg-primary/20 text-primary transition-colors disabled:opacity-50 flex-shrink-0"
+                                      >
+                                        {isCreating ? (
+                                          <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <>
+                                            <RiAddLine className="h-3.5 w-3.5 mr-1" />
+                                            Worktree
+                                          </>
+                                        )}
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left">
+                                      Create worktree for PR branch ({pr.headRefName})
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              );
+                            })
+                          )
                         )}
                       </div>
                     )}
