@@ -547,32 +547,6 @@ const streamdownControls = {
   },
 };
 
-// Mermaid copy button — copies raw mermaid source
-const MermaidCopyButton: React.FC<{ source: string }> = ({ source }) => {
-  const [copied, setCopied] = React.useState(false);
-
-  const handleCopy = async () => {
-    if (!source) return;
-    const result = await copyTextToClipboard(source);
-    if (result.ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } else {
-      console.error('Failed to copy diagram:', result.error);
-    }
-  };
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-      title="Copy diagram source"
-    >
-      {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
-    </button>
-  );
-};
-
 type MermaidControlOptions = {
   download: boolean;
   copy: boolean;
