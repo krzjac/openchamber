@@ -2697,7 +2697,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         <div className="oc-group">
           <div
             className={cn(
-              "group/gh flex items-center justify-between gap-2 py-1 min-w-0 rounded-sm",
+              "group/gh relative flex items-center justify-between gap-1 py-1 min-w-0 rounded-sm",
               !hideGroupLabel && "hover:bg-interactive-hover/50 cursor-pointer"
             )}
             onClick={!hideGroupLabel ? () => {
@@ -2730,12 +2730,19 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             aria-label={!hideGroupLabel ? (isCollapsed ? `Expand ${group.label}` : `Collapse ${group.label}`) : undefined}
           >
             {!hideGroupLabel ? (
-              <div className="min-w-0 flex items-center gap-1.5 pl-1.5">
+              <div className={cn(
+                "min-w-0 flex items-center gap-1.5 pl-1.5 transition-[padding]",
+                !mobileVariant && (
+                  !group.isMain && group.worktree
+                    ? "group-hover/gh:pr-14 group-focus-within/gh:pr-14"
+                    : "group-hover/gh:pr-7 group-focus-within/gh:pr-7"
+                ),
+              )}>
                 {!group.isMain || isGitProject ? (
                   <RiGitBranchLine className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 ) : null}
                 <div className="min-w-0 flex flex-col justify-center">
-                  <p className={cn('text-[15px] font-semibold truncate', isActiveGroup ? 'text-primary' : 'text-muted-foreground')}>
+                  <p className={cn('text-[14px] font-semibold truncate', isActiveGroup ? 'text-primary' : 'text-muted-foreground')}>
                     {group.label}
                   </p>
                   {showBranchSubtitle ? (
@@ -2752,60 +2759,67 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
               </div>
             ) : <div />}
             {group.directory ? (
-              <div className="flex items-center gap-1 px-0.5">
+              <>
                 {!group.isMain && group.worktree ? (
+                  <div className={cn(
+                    'absolute right-7 top-1/2 -translate-y-1/2 z-10 transition-opacity',
+                    mobileVariant ? 'opacity-100' : 'opacity-0 group-hover/gh:opacity-100 group-focus-within/gh:opacity-100',
+                  )}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            sessionEvents.requestDelete({
+                              sessions: allGroupSessions,
+                              mode: 'worktree',
+                              worktree: group.worktree,
+                            });
+                          }}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                          aria-label={`Delete ${group.label}`}
+                        >
+                          <RiDeleteBinLine className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" sideOffset={4}>
+                        <p>Delete worktree</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                ) : null}
+                <div className={cn(
+                  'absolute right-0.5 top-1/2 -translate-y-1/2 z-10 transition-opacity',
+                  mobileVariant ? 'opacity-100' : 'opacity-0 group-hover/gh:opacity-100 group-focus-within/gh:opacity-100',
+                )}>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          sessionEvents.requestDelete({
-                            sessions: allGroupSessions,
-                            mode: 'worktree',
-                            worktree: group.worktree,
-                          });
+                          if (projectId && projectId !== activeProjectId) {
+                            setActiveProject(projectId);
+                          }
+                          setActiveMainTab('chat');
+                          if (mobileVariant) {
+                            setSessionSwitcherOpen(false);
+                          }
+                          openNewSessionDraft({ directoryOverride: group.directory });
                         }}
-                        className={cn(
-                          'inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity',
-                          mobileVariant ? 'opacity-100' : 'opacity-0 group-hover/gh:opacity-100 group-focus-within/gh:opacity-100',
-                        )}
-                        aria-label={`Delete ${group.label}`}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                        aria-label={`New session in ${group.label}`}
                       >
-                        <RiDeleteBinLine className="h-4 w-4" />
+                        <RiAddLine className="h-4 w-4" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" sideOffset={4}>
-                      <p>Delete worktree</p>
+                      <p>New session</p>
                     </TooltipContent>
                   </Tooltip>
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (projectId && projectId !== activeProjectId) {
-                          setActiveProject(projectId);
-                        }
-                        setActiveMainTab('chat');
-                        if (mobileVariant) {
-                          setSessionSwitcherOpen(false);
-                        }
-                        openNewSessionDraft({ directoryOverride: group.directory });
-                      }}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                      aria-label={`New session in ${group.label}`}
-                    >
-                      <RiAddLine className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" sideOffset={4}>
-                    <p>New session</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+                </div>
+              </>
             ) : null}
           </div>
           {!isCollapsed ? (

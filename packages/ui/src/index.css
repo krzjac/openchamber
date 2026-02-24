@@ -1040,6 +1040,21 @@ textarea[data-terminal-hidden-input="true"]::placeholder {
   animation: attention-diamond-pulse 2.3s ease-in-out infinite;
 }
 
+@keyframes border-glow-pulse {
+  0%, 100% {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    border-color: var(--primary);
+    box-shadow: 0 0 6px 1px var(--primary);
+  }
+}
+
+.animate-border-glow-pulse {
+  animation: border-glow-pulse 3s ease-in-out infinite;
+}
+
 @keyframes marquee-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-100%); }

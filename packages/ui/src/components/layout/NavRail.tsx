@@ -1,0 +1,539 @@
+import React from 'react';
+import {
+  RiFolderAddLine,
+  RiSettings3Line,
+  RiQuestionLine,
+  RiDownloadLine,
+  RiInformationLine,
+  RiPencilLine,
+  RiCloseLine,
+} from '@remixicon/react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from '@/components/ui';
+
+import { UpdateDialog } from '@/components/ui/UpdateDialog';
+import { ProjectEditDialog } from '@/components/layout/ProjectEditDialog';
+import { useUIStore } from '@/stores/useUIStore';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useSessionStore } from '@/stores/useSessionStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { useUpdateStore } from '@/stores/useUpdateStore';
+import { cn, formatDirectoryName } from '@/lib/utils';
+import { PROJECT_ICON_MAP, PROJECT_COLOR_MAP } from '@/lib/projectMeta';
+import { isDesktopLocalOriginActive, isDesktopShell, isTauriShell } from '@/lib/desktop';
+import { useLongPress } from '@/hooks/useLongPress';
+import { sessionEvents } from '@/lib/sessionEvents';
+import type { ProjectEntry } from '@/lib/api/types';
+
+const normalize = (value: string): string => {
+  if (!value) return '';
+  const replaced = value.replace(/\\/g, '/');
+  return replaced === '/' ? '/' : replaced.replace(/\/+$/, '');
+};
+
+const NAV_RAIL_WIDTH = 56;
+
+/** Tinted background for project tiles — uses project color at low opacity, or neutral fallback */
+const TileBackground: React.FC<{ colorVar: string | null; children: React.ReactNode }> = ({
+  colorVar,
+  children,
+}) => (
+  <span
+    className="relative flex h-full w-full items-center justify-center rounded-lg overflow-hidden"
+    style={{ backgroundColor: 'var(--surface-muted)' }}
+  >
+    {colorVar && (
+      <span
+        className="absolute inset-0 opacity-15"
+        style={{ backgroundColor: colorVar }}
+      />
+    )}
+    <span className="relative z-10 flex items-center justify-center">
+      {children}
+    </span>
+  </span>
+);
+
+/** First-letter avatar fallback */
+const LetterAvatar: React.FC<{ label: string; color?: string | null }> = ({
+  label,
+  color,
+}) => {
+  const letter = label.charAt(0).toUpperCase() || '?';
+  const colorVar = color ? (PROJECT_COLOR_MAP[color] ?? null) : null;
+  return (
+    <span
+      className="flex h-full w-full items-center justify-center text-lg font-medium select-none"
+      style={{ color: colorVar ?? 'var(--surface-foreground)', fontFamily: 'var(--font-mono, monospace)' }}
+    >
+      {letter}
+    </span>
+  );
+};
+
+/** Single project tile in the nav rail — right-click for context menu (no visible 3-dot) */
+const ProjectTile: React.FC<{
+  project: ProjectEntry;
+  isActive: boolean;
+  hasStreaming: boolean;
+  hasUnread: boolean;
+  label: string;
+  onClick: () => void;
+  onEdit: () => void;
+  onClose: () => void;
+}> = ({ project, isActive, hasStreaming, hasUnread, label, onClick, onEdit, onClose }) => {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const ProjectIcon = project.icon ? PROJECT_ICON_MAP[project.icon] : null;
+  const projectColorVar = project.color ? (PROJECT_COLOR_MAP[project.color] ?? null) : null;
+
+  const longPressHandlers = useLongPress({
+    onLongPress: () => setMenuOpen(true),
+    onTap: onClick,
+  });
+
+  return (
+    <Tooltip delayDuration={400}>
+      <TooltipTrigger asChild>
+        <div
+          className="relative"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenuOpen(true);
+          }}
+        >
+          {hasStreaming ? (
+            <button
+              type="button"
+              {...longPressHandlers}
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden cursor-default',
+                'border border-[var(--primary)] animate-border-glow-pulse',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+              )}
+            >
+              <TileBackground colorVar={projectColorVar}>
+                {ProjectIcon ? (
+                  <ProjectIcon
+                    className="h-5 w-5 shrink-0"
+                    style={projectColorVar ? { color: projectColorVar } : { color: 'var(--surface-foreground)' }}
+                  />
+                ) : (
+                  <LetterAvatar label={label} color={project.color} />
+                )}
+              </TileBackground>
+            </button>
+          ) : (
+            <button
+              type="button"
+              {...longPressHandlers}
+              className={cn(
+                'flex h-9 w-9 items-center justify-center rounded-lg overflow-hidden cursor-default',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                hasUnread
+                  ? 'border border-[var(--status-info)]'
+                  : isActive
+                    ? 'bg-transparent border border-[var(--surface-foreground)]'
+                    : 'bg-transparent border border-transparent hover:bg-[var(--interactive-hover)]/50 hover:border-[var(--interactive-border)]',
+                menuOpen && !isActive && !hasUnread && 'bg-[var(--interactive-hover)]/50 border-[var(--interactive-border)]',
+              )}
+            >
+              <TileBackground colorVar={projectColorVar}>
+                {ProjectIcon ? (
+                  <ProjectIcon
+                    className="h-5 w-5 shrink-0"
+                    style={projectColorVar ? { color: projectColorVar } : { color: 'var(--surface-foreground)' }}
+                  />
+                ) : (
+                  <LetterAvatar label={label} color={project.color} />
+                )}
+              </TileBackground>
+            </button>
+          )}
+
+          {/* Right-click context menu */}
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <span className="sr-only">Project options</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="right" sideOffset={4} className="min-w-[160px]">
+              <DropdownMenuItem onClick={onEdit} className="gap-2">
+                <RiPencilLine className="h-4 w-4" />
+                Edit project
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onClose}
+                className="text-destructive focus:text-destructive gap-2"
+              >
+                <RiCloseLine className="h-4 w-4" />
+                Close project
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+};
+
+interface NavRailProps {
+  className?: string;
+}
+
+export const NavRail: React.FC<NavRailProps> = ({ className }) => {
+  const projects = useProjectsStore((s) => s.projects);
+  const activeProjectId = useProjectsStore((s) => s.activeProjectId);
+  const setActiveProject = useProjectsStore((s) => s.setActiveProject);
+  const addProject = useProjectsStore((s) => s.addProject);
+  const removeProject = useProjectsStore((s) => s.removeProject);
+  const updateProjectMeta = useProjectsStore((s) => s.updateProjectMeta);
+  const homeDirectory = useDirectoryStore((s) => s.homeDirectory);
+  const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
+  const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
+  const toggleHelpDialog = useUIStore((s) => s.toggleHelpDialog);
+
+  const sessionStatus = useSessionStore((s) => s.sessionStatus);
+  const sessionAttentionStates = useSessionStore((s) => s.sessionAttentionStates);
+  const sessionsByDirectory = useSessionStore((s) => s.sessionsByDirectory);
+  const getSessionsByDirectory = useSessionStore((s) => s.getSessionsByDirectory);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const availableWorktreesByProject = useSessionStore((s) => s.availableWorktreesByProject);
+
+  const updateStore = useUpdateStore();
+  const { available: updateAvailable, downloaded: updateDownloaded } = updateStore;
+  const [updateDialogOpen, setUpdateDialogOpen] = React.useState(false);
+
+  const [editingProject, setEditingProject] = React.useState<{
+    id: string;
+    name: string;
+    path: string;
+    icon?: string | null;
+    color?: string | null;
+  } | null>(null);
+
+  const isDesktopApp = React.useMemo(() => isDesktopShell(), []);
+  const tauriIpcAvailable = React.useMemo(() => isTauriShell(), []);
+
+  const formatLabel = React.useCallback(
+    (project: ProjectEntry): string => {
+      return (
+        project.label?.trim() ||
+        formatDirectoryName(project.path, homeDirectory) ||
+        project.path
+      );
+    },
+    [homeDirectory],
+  );
+
+  const projectIndicators = React.useMemo(() => {
+    const result = new Map<string, { hasStreaming: boolean; hasUnread: boolean }>();
+    for (const project of projects) {
+      const projectRoot = normalize(project.path);
+      if (!projectRoot) {
+        result.set(project.id, { hasStreaming: false, hasUnread: false });
+        continue;
+      }
+
+      const dirs: string[] = [projectRoot];
+      const worktrees = availableWorktreesByProject.get(projectRoot) ?? [];
+      for (const meta of worktrees) {
+        const p =
+          meta && typeof meta === 'object' && 'path' in meta
+            ? (meta as { path?: unknown }).path
+            : null;
+        if (typeof p === 'string' && p.trim()) {
+          const normalized = normalize(p);
+          if (normalized && normalized !== projectRoot) {
+            dirs.push(normalized);
+          }
+        }
+      }
+
+      const seen = new Set<string>();
+      let hasStreaming = false;
+      let hasUnread = false;
+
+      for (const dir of dirs) {
+        const list = sessionsByDirectory.get(dir) ?? getSessionsByDirectory(dir);
+        for (const session of list) {
+          if (!session?.id || seen.has(session.id)) continue;
+          seen.add(session.id);
+
+          const statusType = sessionStatus?.get(session.id)?.type ?? 'idle';
+          if (statusType === 'busy' || statusType === 'retry') {
+            hasStreaming = true;
+          }
+
+          const isCurrentVisible =
+            session.id === currentSessionId && project.id === activeProjectId;
+          if (
+            !isCurrentVisible &&
+            sessionAttentionStates.get(session.id)?.needsAttention === true
+          ) {
+            hasUnread = true;
+          }
+
+          if (hasStreaming && hasUnread) break;
+        }
+        if (hasStreaming && hasUnread) break;
+      }
+
+      result.set(project.id, { hasStreaming, hasUnread });
+    }
+    return result;
+  }, [
+    activeProjectId,
+    availableWorktreesByProject,
+    currentSessionId,
+    getSessionsByDirectory,
+    projects,
+    sessionAttentionStates,
+    sessionStatus,
+    sessionsByDirectory,
+  ]);
+
+  const handleAddProject = React.useCallback(() => {
+    if (!tauriIpcAvailable || !isDesktopLocalOriginActive()) {
+      sessionEvents.requestDirectoryDialog();
+      return;
+    }
+    import('@/lib/desktop')
+      .then(({ requestDirectoryAccess }) => requestDirectoryAccess(''))
+      .then((result) => {
+        if (result.success && result.path) {
+          const added = addProject(result.path, { id: result.projectId });
+          if (!added) {
+            toast.error('Failed to add project', {
+              description: 'Please select a valid directory.',
+            });
+          }
+        } else if (result.error && result.error !== 'Directory selection cancelled') {
+          toast.error('Failed to select directory', { description: result.error });
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to select directory:', error);
+        toast.error('Failed to select directory');
+      });
+  }, [addProject, tauriIpcAvailable]);
+
+  const handleEditProject = React.useCallback(
+    (projectId: string) => {
+      const project = projects.find((p) => p.id === projectId);
+      if (!project) return;
+      setEditingProject({
+        id: project.id,
+        name: formatLabel(project),
+        path: project.path,
+        icon: project.icon,
+        color: project.color,
+      });
+    },
+    [projects, formatLabel],
+  );
+
+  const handleSaveProjectEdit = React.useCallback(
+    (data: { label: string; icon: string | null; color: string | null }) => {
+      if (!editingProject) return;
+      updateProjectMeta(editingProject.id, data);
+      setEditingProject(null);
+    },
+    [editingProject, updateProjectMeta],
+  );
+
+  const handleCloseProject = React.useCallback(
+    (projectId: string) => {
+      removeProject(projectId);
+    },
+    [removeProject],
+  );
+
+  return (
+    <>
+      <nav
+        className={cn(
+          'flex h-full w-14 shrink-0 flex-col items-center bg-[var(--surface-background)] overflow-hidden',
+          className,
+        )}
+        aria-label="Project navigation"
+      >
+        {/* Projects list */}
+        <div className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden scrollbar-none">
+          <div className="flex flex-col items-center gap-3 px-1 py-3">
+            {projects.map((project) => {
+              const isActive = project.id === activeProjectId;
+              const indicators = projectIndicators.get(project.id);
+              return (
+                <ProjectTile
+                  key={project.id}
+                  project={project}
+                  isActive={isActive}
+                  hasStreaming={indicators?.hasStreaming ?? false}
+                  hasUnread={indicators?.hasUnread ?? false}
+                  label={formatLabel(project)}
+                  onClick={() => {
+                    if (project.id !== activeProjectId) {
+                      setActiveProject(project.id);
+                    }
+                  }}
+                  onEdit={() => handleEditProject(project.id)}
+                  onClose={() => handleCloseProject(project.id)}
+                />
+              );
+            })}
+
+            {/* Add project button */}
+            <Tooltip delayDuration={400}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={handleAddProject}
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    'text-[var(--surface-muted-foreground)] hover:text-[var(--surface-foreground)]',
+                    'hover:bg-[var(--interactive-hover)]/50',
+                    'transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                  )}
+                  aria-label="Add project"
+                >
+                  <RiFolderAddLine className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Add project
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/* Bottom actions */}
+        <div className="shrink-0 w-full pt-3 pb-4 flex flex-col items-center gap-2">
+          {(updateAvailable || updateDownloaded) && (
+            <Tooltip delayDuration={400}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setUpdateDialogOpen(true)}
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    'bg-[var(--primary)]/10 text-[var(--primary)]',
+                    'hover:bg-[var(--primary)]/20 transition-colors',
+                  )}
+                  aria-label="Update available"
+                >
+                  <RiDownloadLine className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                Update available
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {!isDesktopApp && !(updateAvailable || updateDownloaded) && (
+            <Tooltip delayDuration={400}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setAboutDialogOpen(true)}
+                  className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-lg',
+                    'text-[var(--surface-muted-foreground)] hover:text-[var(--surface-foreground)]',
+                    'hover:bg-[var(--interactive-hover)] transition-colors',
+                  )}
+                  aria-label="About"
+                >
+                  <RiInformationLine className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                About OpenChamber
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          <Tooltip delayDuration={400}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleHelpDialog}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-lg',
+                  'text-[var(--surface-muted-foreground)] hover:text-[var(--surface-foreground)]',
+                  'hover:bg-[var(--interactive-hover)] transition-colors',
+                )}
+                aria-label="Keyboard shortcuts"
+              >
+                <RiQuestionLine className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Keyboard shortcuts
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip delayDuration={400}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setSettingsDialogOpen(true)}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-lg',
+                  'text-[var(--surface-muted-foreground)] hover:text-[var(--surface-foreground)]',
+                  'hover:bg-[var(--interactive-hover)] transition-colors',
+                )}
+                aria-label="Settings"
+              >
+                <RiSettings3Line className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              Settings
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </nav>
+
+      {/* Dialogs */}
+      {editingProject && (
+        <ProjectEditDialog
+          open={!!editingProject}
+          onOpenChange={(open) => {
+            if (!open) setEditingProject(null);
+          }}
+          projectName={editingProject.name}
+          projectPath={editingProject.path}
+          initialIcon={editingProject.icon}
+          initialColor={editingProject.color}
+          onSave={handleSaveProjectEdit}
+        />
+      )}
+
+      <UpdateDialog
+        open={updateDialogOpen}
+        onOpenChange={setUpdateDialogOpen}
+        info={updateStore.info}
+        downloading={updateStore.downloading}
+        downloaded={updateStore.downloaded}
+        progress={updateStore.progress}
+        error={updateStore.error}
+        onDownload={updateStore.downloadUpdate}
+        onRestart={updateStore.restartToUpdate}
+        runtimeType={updateStore.runtimeType}
+      />
+    </>
+  );
+};
+
+export { NAV_RAIL_WIDTH };

@@ -1,9 +1,9 @@
 import React, { useRef, useEffect } from 'react';
 import { motion, useMotionValue, animate } from 'motion/react';
-import { RiSettings3Line } from '@remixicon/react';
 import { Header } from './Header';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar } from './Sidebar';
+import { NavRail } from './NavRail';
 import { RightSidebar } from './RightSidebar';
 import { RightSidebarTabs } from './RightSidebarTabs';
 import { ContextPanel } from './ContextPanel';
@@ -659,24 +659,12 @@ export const MainLayout: React.FC = () => {
                         )}
                         aria-hidden={!mobileLeftDrawerOpen}
                     >
-                        <div className="h-full overflow-hidden flex flex-col bg-sidebar shadow-xl drawer-safe-area">
-                            <div className="flex-1 overflow-hidden">
+                        <div className="h-full overflow-hidden flex bg-sidebar shadow-xl drawer-safe-area">
+                            <NavRail className="shrink-0" />
+                            <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
                                 <ErrorBoundary>
                                     <SessionSidebar mobileVariant />
                                 </ErrorBoundary>
-                            </div>
-                            <div className="border-t border-border p-3">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setMobileLeftDrawerOpen(false);
-                                        setSettingsDialogOpen(true);
-                                    }}
-                                    className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-muted-foreground hover:bg-interactive-hover hover:text-foreground transition-colors"
-                                >
-                                    <RiSettings3Line className="h-5 w-5" />
-                                    <span className="typography-ui-label">Settings</span>
-                                </button>
                             </div>
                         </div>
                     </motion.aside>
@@ -775,6 +763,8 @@ export const MainLayout: React.FC = () => {
                         <div className={cn('absolute inset-0 flex flex-col', isMultiRunLauncherOpen && 'invisible')}>
                             <Header />
                             <div className="flex flex-1 overflow-hidden">
+                                <NavRail />
+                                <div className="flex flex-1 min-w-0 overflow-hidden border-t border-l border-border/50 rounded-tl-xl">
                                 <Sidebar isOpen={isSidebarOpen} isMobile={isMobile}>
                                     <SessionSidebar hideProjectSelector />
                                 </Sidebar>
@@ -800,6 +790,7 @@ export const MainLayout: React.FC = () => {
                                     <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
                                         <ErrorBoundary><TerminalView /></ErrorBoundary>
                                     </BottomTerminalDock>
+                                </div>
                                 </div>
                             </div>
                         </div>
