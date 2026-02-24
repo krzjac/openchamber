@@ -249,7 +249,7 @@ interface NavRailProps {
 export const NavRail: React.FC<NavRailProps> = ({ className, mobile }) => {
   const projects = useProjectsStore((s) => s.projects);
   const activeProjectId = useProjectsStore((s) => s.activeProjectId);
-  const setActiveProject = useProjectsStore((s) => s.setActiveProject);
+  const setActiveProjectIdOnly = useProjectsStore((s) => s.setActiveProjectIdOnly);
   const addProject = useProjectsStore((s) => s.addProject);
   const removeProject = useProjectsStore((s) => s.removeProject);
   const reorderProjects = useProjectsStore((s) => s.reorderProjects);
@@ -424,14 +424,14 @@ export const NavRail: React.FC<NavRailProps> = ({ className, mobile }) => {
           e.preventDefault();
           const target = projects[num - 1];
           if (target && target.id !== activeProjectId) {
-            setActiveProject(target.id);
+            setActiveProjectIdOnly(target.id);
           }
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projects, activeProjectId, setActiveProject]);
+  }, [projects, activeProjectId, setActiveProjectIdOnly]);
 
   // Drag-to-reorder
   const sensors = useSensors(
@@ -485,7 +485,7 @@ export const NavRail: React.FC<NavRailProps> = ({ className, mobile }) => {
                     label={formatLabel(project)}
                     onClick={() => {
                       if (project.id !== activeProjectId) {
-                        setActiveProject(project.id);
+                        setActiveProjectIdOnly(project.id);
                       }
                     }}
                     onEdit={() => handleEditProject(project.id)}
