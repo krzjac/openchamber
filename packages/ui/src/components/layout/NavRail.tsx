@@ -120,8 +120,11 @@ const ProjectTile: React.FC<{
         <div
           className="relative"
           onContextMenu={(e) => {
-            e.preventDefault();
-            setMenuOpen(true);
+            // Only handle right-click (desktop), not long-tap (mobile)
+            if (e.nativeEvent instanceof MouseEvent && e.nativeEvent.button === 2) {
+              e.preventDefault();
+              setMenuOpen(true);
+            }
           }}
         >
           {hasStreaming ? (
