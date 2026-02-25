@@ -42,15 +42,15 @@ export interface VoiceStatusIndicatorProps {
 
 const sizeClasses = {
     sm: {
-        icon: 'w-4 h-4',
+        icon: 'w-5 h-5',
         container: 'gap-1.5',
     },
     md: {
-        icon: 'w-5 h-5',
+        icon: 'w-6 h-6',
         container: 'gap-2',
     },
     lg: {
-        icon: 'w-6 h-6',
+        icon: 'w-7 h-7',
         container: 'gap-2.5',
     },
 };
@@ -65,7 +65,7 @@ const statusConfig: Record<
     }
 > = {
     idle: {
-        icon: RiMicOffLine,
+        icon: RiMicLine,
         color: 'text-muted-foreground',
         label: 'Voice Ready',
     },

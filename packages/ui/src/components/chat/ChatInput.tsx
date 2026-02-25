@@ -25,12 +25,8 @@ import { SkillAutocomplete, type SkillAutocompleteHandle } from './SkillAutocomp
 import { cn, isMacOS } from '@/lib/utils';
 import { ServerFilePicker } from './ServerFilePicker';
 import { ModelControls } from './ModelControls';
-import { UnifiedControlsDrawer } from './UnifiedControlsDrawer';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
 import { StatusRow } from './StatusRow';
-import { MobileAgentButton } from './MobileAgentButton';
-import { MobileModelButton } from './MobileModelButton';
-import { MobileSessionStatusBar } from './MobileSessionStatusBar';
 import { useAssistantStatus } from '@/hooks/useAssistantStatus';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { toast } from '@/components/ui';
@@ -55,6 +51,7 @@ const EMPTY_QUEUE: QueuedMessage[] = [];
 interface ChatInputProps {
     onOpenSettings?: () => void;
     scrollToBottom?: (options?: { instant?: boolean; force?: boolean }) => void;
+    onMessageChange?: (message: string) => void;
 }
 
 type AutocompleteOverlayPosition = {
@@ -90,7 +87,15 @@ const saveStoredDraft = (sessionId: string | null, draft: string): void => {
     }
 };
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom, onMessageChange }) => {
+    // Unique ID for this ChatInput instance (for debugging)
+    const instanceId = React.useRef(Math.random().toString(36).slice(2, 8));
+    React.useEffect(() => {
+        console.log('[ChatInput] mount instance:', instanceId.current, { hasOnMessageChange: !!onMessageChange });
+        return () => {
+            console.log('[ChatInput] unmount instance:', instanceId.current);
+        };
+    }, [onMessageChange]);
     // Track if we restored a draft on mount (for text selection)
     const initialDraftRef = React.useRef<string | null>(null);
     // Track initial session ID (captured at mount time for draft restoration)
@@ -128,10 +133,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const skillRef = React.useRef<SkillAutocompleteHandle>(null);
     // Ref to track current message value without triggering re-renders in effects
     const messageRef = React.useRef(message);
+    // Ref to track onMessageChange callback to avoid stale closures
+    const onMessageChangeRef = React.useRef(onMessageChange);
 
     const sendMessage = useSessionStore((state) => state.sendMessage);
     const currentSessionId = useSessionStore((state) => state.currentSessionId);
     const newSessionDraftOpen = useSessionStore((state) => state.newSessionDraft?.open);
+    const setStoreDraftMessage = useSessionStore((state) => state.setDraftMessage);
     const abortCurrentOperation = useSessionStore((state) => state.abortCurrentOperation);
     const acknowledgeSessionAbort = useSessionStore((state) => state.acknowledgeSessionAbort);
     const abortPromptSessionId = useSessionStore((state) => state.abortPromptSessionId);
@@ -145,6 +153,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
     const consumePendingInputText = useSessionStore((state) => state.consumePendingInputText);
     const pendingInputText = useSessionStore((state) => state.pendingInputText);
     const consumePendingSyntheticParts = useSessionStore((state) => state.consumePendingSyntheticParts);
+    
+    // Keep refs in sync to avoid stale closures
+    React.useEffect(() => {
+        onMessageChangeRef.current = onMessageChange;
+    }, [onMessageChange]);
+    const newSessionDraftOpenRef = React.useRef(newSessionDraftOpen);
+    const setStoreDraftMessageRef = React.useRef(setStoreDraftMessage);
+    React.useEffect(() => {
+        newSessionDraftOpenRef.current = newSessionDraftOpen;
+        setStoreDraftMessageRef.current = setStoreDraftMessage;
+    }, [newSessionDraftOpen, setStoreDraftMessage]);
 
     const { currentProviderId, currentModelId, currentVariant, currentAgentName, setAgent, getVisibleAgents } = useConfigStore();
     const agents = getVisibleAgents();
@@ -247,6 +266,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             const oldSessionId = prevSessionIdRef.current;
             prevSessionIdRef.current = currentSessionId;
             setInputMode('normal');
+
+            // Read from store directly (not from the `newSessionDraftOpen` closure) because
+            // openNewSessionDraft() sets currentSessionId → null AND open → true in the same
+            // synchronous set() call. By the time this effect runs the closure value of
+            // newSessionDraftOpen may still be false, but the store is already up to date.
+            if (useSessionStore.getState().newSessionDraft?.open) {
+                return;
+            }
 
             if (persistChatDraft) {
                 // Save current draft for the session we're leaving
@@ -396,19 +423,39 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
 
     // Consume pending input text (e.g., from revert action)
     React.useEffect(() => {
+        console.log('[ChatInput] pendingInputText effect triggered:', { instanceId: instanceId.current, pendingInputText, hasOnMessageChange: !!onMessageChangeRef.current });
         if (pendingInputText !== null) {
             const pending = consumePendingInputText();
+            console.log('[ChatInput] consumed pending:', { instanceId: instanceId.current, pending, isDraftOpen: newSessionDraftOpenRef.current });
             if (pending?.text) {
                 if (pending.mode === 'append') {
                     setMessage((prev) => {
                         const next = pending.text.trim();
                         if (!next) return prev;
                         const base = prev.trimEnd();
-                        if (!base.trim()) return next;
-                        return `${base} ${next}`;
+                        if (!base.trim()) {
+                            console.log('[ChatInput] append mode (empty base), calling onMessageChange:', { instanceId: instanceId.current, text: next });
+                            onMessageChangeRef.current?.(next);
+                            if (newSessionDraftOpenRef.current) {
+                                setStoreDraftMessageRef.current(next);
+                            }
+                            return next;
+                        }
+                        const finalText = `${base} ${next}`;
+                        console.log('[ChatInput] append mode, calling onMessageChange:', { instanceId: instanceId.current, text: finalText });
+                        onMessageChangeRef.current?.(finalText);
+                        if (newSessionDraftOpenRef.current) {
+                            setStoreDraftMessageRef.current(finalText);
+                        }
+                        return finalText;
                     });
                 } else {
+                    console.log('[ChatInput] replace mode, calling onMessageChange:', { instanceId: instanceId.current, text: pending.text });
                     setMessage(pending.text);
+                    onMessageChangeRef.current?.(pending.text);
+                    if (newSessionDraftOpenRef.current) {
+                        setStoreDraftMessageRef.current(pending.text);
+                    }
                 }
                 // Focus textarea after setting message
                 setTimeout(() => {
@@ -1257,6 +1304,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
         }
 
         setMessage(value);
+        onMessageChange?.(value);
+        if (newSessionDraftOpen) {
+            setStoreDraftMessage(value);
+        }
         adjustTextareaHeight();
         updateAutocompleteState(value, cursorPosition);
     };
@@ -2042,45 +2093,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
             data-keyboard-avoid="true"
             style={isMobile && inputBarOffset > 0 && !isKeyboardOpen ? { marginBottom: `${inputBarOffset}px` } : undefined}
         >
-            {/* Absolute positioned above input - no layout shift */}
-            <div className="absolute bottom-full left-0 right-0">
-                <StatusRow
-                    isWorking={working.isWorking}
-                    statusText={workingStatusText}
-                    isGenericStatus={working.isGenericStatus}
-                    isWaitingForPermission={working.isWaitingForPermission}
-                    wasAborted={working.wasAborted}
-                    abortActive={working.abortActive}
-                    retryInfo={working.retryInfo}
-                    showAbortStatus={showAbortStatus}
-                />
-            </div>
             <div className={cn('chat-column relative overflow-visible', isDesktopExpanded && 'flex flex-1 min-h-0 flex-col')}>
-                <AttachedFilesList />
-                <QueuedMessageChips
-                    onEditMessage={(content) => {
-                        setMessage(content);
-                        setTimeout(() => {
-                            textareaRef.current?.focus();
-                        }, 0);
-                    }}
-                />
-                {hasDrafts && (
-                    <div className="pb-2">
-                        <div
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border"
-                            style={{
-                                backgroundColor: currentTheme?.colors?.surface?.elevated,
-                                borderColor: currentTheme?.colors?.interactive?.border,
-                            }}
-                        >
-                            <span className="text-xs font-medium text-muted-foreground">Review comments:</span>
-                            <span className="text-xs font-semibold" style={{ color: currentTheme?.colors?.status?.info }}>
-                                {draftCount}
-                            </span>
-                        </div>
-                    </div>
-                )}
                 <div
                     className={cn(
                         "flex flex-col relative overflow-visible",
@@ -2102,6 +2115,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                 >
+
                     {isDragging && (
                         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
                             <div className="text-center">
@@ -2232,7 +2246,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         className={cn(
                             'bg-transparent',
                             footerPaddingClass,
-                            isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass)
+                            cn('flex items-center justify-between', footerGapClass)
                         )}
                         style={{
                             borderBottomLeftRadius: cornerRadius,
@@ -2240,87 +2254,46 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBo
                         }}
                         data-chat-input-footer="true"
                     >
-                        {isMobile ? (
-                            <>
-                                <div className="flex w-full items-center justify-between gap-x-1.5">
-                                    <div className="flex items-center gap-x-1">
-                                        {attachmentsControls}
+                        <div className={cn("flex items-center flex-shrink-0", footerGapClass)}>
+                            {attachmentsControls}
+                            <Tooltip delayDuration={600}>
+                                <TooltipTrigger asChild>
+                                    <button
+                                        type="button"
+                                        className={cn(
+                                            footerIconButtonClass,
+                                            'rounded-md',
+                                            isExpandedInput
+                                                ? 'text-primary'
+                                                : 'text-muted-foreground hover:bg-[var(--interactive-hover)]/40 hover:text-foreground'
+                                        )}
+                                        onMouseDown={(event) => {
+                                            event.preventDefault();
+                                        }}
+                                        onClick={() => setExpandedInput(!isExpandedInput)}
+                                        aria-label="Toggle focus mode"
+                                        aria-pressed={isExpandedInput}
+                                    >
+                                        <RiFullscreenLine className={cn(iconSizeClass)} />
+                                    </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={8}>
+                                    <div className="flex flex-col gap-0.5 text-center">
+                                        <span>Focus mode</span>
+                                        <span className="font-mono opacity-60">
+                                            {isMacOS() ? '⌘⇧E' : 'Ctrl+Shift+E'}
+                                        </span>
                                     </div>
-                                    <div className="flex items-center min-w-0 gap-x-1 justify-end">
-                                        <div className="flex items-center gap-x-1 min-w-0 max-w-[60vw] flex-shrink">
-                                            <MobileModelButton onOpenModel={handleOpenMobileControls} className="min-w-0 flex-shrink" />
-                                            <MobileAgentButton
-                                                onOpenAgentPanel={() => setMobileControlsPanel('agent')}
-                                                onCycleAgent={handleCycleAgent}
-                                                className="min-w-0 flex-shrink"
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-x-1 flex-shrink-0">
-                                            <BrowserVoiceButton />
-                                            {actionButtons}
-                                        </div>
-                                    </div>
-                                </div>
-                                <ModelControls
-                                    className="hidden"
-                                    mobilePanel={mobileControlsPanel}
-                                    onMobilePanelChange={setMobileControlsPanel}
-                                    onMobilePanelSelection={handleReturnToUnifiedControls}
-                                    onAgentPanelSelection={() => setMobileControlsPanel(null)}
-                                />
-                                <UnifiedControlsDrawer
-                                    open={mobileControlsOpen}
-                                    onClose={handleCloseMobileControls}
-                                    onOpenModel={() => handleOpenMobilePanel('model')}
-                                    onOpenEffort={() => handleOpenMobilePanel('variant')}
-                                />
-                            </>
-                        ) : (
-                            <>
-                                <div className={cn("flex items-center flex-shrink-0", footerGapClass)}>
-                                    {attachmentsControls}
-                                    <Tooltip delayDuration={600}>
-                                        <TooltipTrigger asChild>
-                                            <button
-                                                type="button"
-                                                className={cn(
-                                                    footerIconButtonClass,
-                                                    'rounded-md',
-                                                    isExpandedInput
-                                                        ? 'text-primary'
-                                                        : 'text-muted-foreground hover:bg-[var(--interactive-hover)]/40 hover:text-foreground'
-                                                )}
-                                                onMouseDown={(event) => {
-                                                    event.preventDefault();
-                                                }}
-                                                onClick={() => setExpandedInput(!isExpandedInput)}
-                                                aria-label="Toggle focus mode"
-                                                aria-pressed={isExpandedInput}
-                                            >
-                                                <RiFullscreenLine className={cn(iconSizeClass)} />
-                                            </button>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="top" sideOffset={8}>
-                                            <div className="flex flex-col gap-0.5 text-center">
-                                                <span>Focus mode</span>
-                                                <span className="font-mono opacity-60">
-                                                    {isMacOS() ? '⌘⇧E' : 'Ctrl+Shift+E'}
-                                                </span>
-                                            </div>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                </div>
-                                <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
-                                    <ModelControls className={cn('flex-1 min-w-0 justify-end')} />
-                                    <BrowserVoiceButton />
-                                    {actionButtons}
-                                </div>
-                            </>
-                        )}
+                                </TooltipContent>
+                            </Tooltip>
+                        </div>
+                        <div className={cn('flex items-center flex-1 justify-end', footerGapClass, 'md:gap-x-3')}>
+                            <ModelControls className={cn('flex-1 min-w-0 justify-end')} />
+                            <BrowserVoiceButton />
+                            {actionButtons}
+                        </div>
                     </div>
 
-                    {/* Mobile Session Status Bar - above input */}
-                    {isMobile && <MobileSessionStatusBar cornerRadius={cornerRadius} />}
                 </div>
             </div>
         </form>

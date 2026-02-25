@@ -24,8 +24,6 @@ import {
 } from '@/components/ui/tooltip';
 import {
     RiMicOffLine,
-    RiStopCircleLine,
-    RiVoiceRecognitionLine,
     RiVolumeUpLine,
 } from '@remixicon/react';
 import { VoiceStatusIndicator } from './VoiceStatusIndicator';
@@ -86,9 +84,9 @@ export function BrowserVoiceButton() {
     
     const [isPressing, setIsPressing] = useState(false);
     const isVSCode = isVSCodeRuntime();
-    const buttonSizeClass = isMobile ? 'h-8 w-8 min-h-[32px] min-w-[32px]' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
-    const iconSizeClass = isMobile ? 'h-[18px] w-[18px]' : (isVSCode ? 'h-4 w-4' : 'h-[18px] w-[18px]');
-    const continuousIconSizeClass = 'size-[18px]';
+    const buttonSizeClass = isMobile ? 'h-9 w-9 min-h-[36px] min-w-[36px]' : (isVSCode ? 'h-6 w-6' : 'h-7 w-7');
+    const iconSizeClass = isMobile ? 'h-5 w-5' : (isVSCode ? 'h-5 w-5' : 'h-5 w-5');
+    const continuousIconSizeClass = 'size-5';
     const clearHoverBackgroundClass = 'bg-transparent hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent';
     
     // Refs for touch handling
@@ -272,8 +270,8 @@ export function BrowserVoiceButton() {
         const supportDetails = browserVoiceService.getSupportDetails();
         const tooltipMessage = !supportDetails.secureContext
             ? 'Voice requires HTTPS or localhost. Please use a secure connection.'
-            : !supportDetails.recognition
-                ? 'Speech recognition not supported in this browser. Try Chrome, Edge, or Safari.'
+            : !supportDetails.recording
+                ? 'Audio recording not supported in this browser.'
                 : !supportDetails.synthesis
                     ? 'Speech synthesis not supported in this browser.'
                     : 'Voice not supported in this browser';
@@ -340,11 +338,9 @@ export function BrowserVoiceButton() {
                         >
                             {isActive ? (
                                 isSpeaking ? (
-                                    // Green speaker icon when AI is speaking
                                     <RiVolumeUpLine className={`${iconSizeClass} text-green-400 animate-pulse`} />
                                 ) : (
-                                    // Red stop icon for listening/processing (both mobile and desktop)
-                                    <RiStopCircleLine className={`${iconSizeClass} text-[var(--status-error)]`} />
+                                    <RiMicOffLine className={`${iconSizeClass} text-[var(--status-error)]`} />
                                 )
                             ) : (
                                 <VoiceStatusIndicator
@@ -360,22 +356,7 @@ export function BrowserVoiceButton() {
                 </Tooltip>
             </TooltipProvider>
 
-            {/* Conversation mode toggle button */}
-            {(status === 'idle' || status === 'error') && (
-                <Button
-                    size="icon"
-                    variant="ghost"
-                    onPointerDownCapture={(event) => event.stopPropagation()}
-                    onClick={handleToggleConversationMode}
-                    aria-label={conversationMode ? 'Continuous mode on' : 'Continuous mode off'}
-                    title={conversationMode ? 'Continuous mode on' : 'Continuous mode off'}
-                    className={
-                        `${buttonSizeClass} p-0 ${clearHoverBackgroundClass} ${conversationMode ? 'text-[var(--status-info)] hover:text-[var(--status-info)]' : 'text-muted-foreground hover:text-foreground'}`
-                    }
-                >
-                    <RiVoiceRecognitionLine className={continuousIconSizeClass} />
-                </Button>
-            )}
+
         </div>
     );
 }

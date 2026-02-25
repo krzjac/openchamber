@@ -195,10 +195,13 @@ export interface SessionStore {
 
     pendingInputText: string | null;
     pendingInputMode: 'replace' | 'append';
+    pendingInputSkipFocus: boolean;
     /** Synthetic context parts to include with the next message sent */
     pendingSyntheticParts: SyntheticContextPart[] | null;
 
     newSessionDraft: NewSessionDraftState;
+    isDraftModalOpen: boolean;
+    draftMessage: string;
 
     // Voice state
     voiceStatus: VoiceStatus;
@@ -215,6 +218,8 @@ export interface SessionStore {
 
     openNewSessionDraft: (options?: { directoryOverride?: string | null; parentID?: string | null; title?: string; initialPrompt?: string; syntheticParts?: SyntheticContextPart[]; targetFolderId?: string }) => void;
     closeNewSessionDraft: () => void;
+    setDraftModalOpen: (open: boolean) => void;
+    setDraftMessage: (message: string) => void;
 
     createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null) => Promise<Session | null>;
     createSessionFromAssistantMessage: (sourceMessageId: string) => Promise<void>;
@@ -303,8 +308,8 @@ export interface SessionStore {
       handleSlashUndo: (sessionId: string) => Promise<void>;
       handleSlashRedo: (sessionId: string) => Promise<void>;
       forkFromMessage: (sessionId: string, messageId: string) => Promise<void>;
-      setPendingInputText: (text: string | null, mode?: 'replace' | 'append') => void;
-      consumePendingInputText: () => { text: string; mode: 'replace' | 'append' } | null;
+      setPendingInputText: (text: string | null, mode?: 'replace' | 'append', skipFocus?: boolean) => void;
+      consumePendingInputText: () => { text: string; mode: 'replace' | 'append'; skipFocus: boolean } | null;
       setPendingSyntheticParts: (parts: SyntheticContextPart[] | null) => void;
      consumePendingSyntheticParts: () => SyntheticContextPart[] | null;
    }

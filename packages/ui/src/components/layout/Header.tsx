@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AnimatedTabs } from '@/components/ui/animated-tabs';
 
-import { RiArrowLeftSLine, RiChat4Line, RiCheckLine, RiCloseLine, RiCommandLine, RiFileTextLine, RiFolder6Line, RiFolderAddLine, RiGithubFill, RiLayoutLeftLine, RiLayoutRightLine, RiMore2Fill, RiPencilLine, RiPlayListAddLine, RiRefreshLine, RiServerLine, RiStackLine, RiTerminalBoxLine, RiTimerLine, type RemixiconComponentType } from '@remixicon/react';
+import { RiArrowLeftSLine, RiChat4Line, RiCheckLine, RiCloseLine, RiCommandLine, RiFileTextLine, RiFolder6Line, RiFolderAddLine, RiGitBranchLine, RiGithubFill, RiLayoutLeftLine, RiLayoutRightLine, RiMore2Fill, RiPencilLine, RiPlayListAddLine, RiRefreshLine, RiServerLine, RiStackLine, RiTerminalBoxLine, RiTimerLine, type RemixiconComponentType } from '@remixicon/react';
 import { DiffIcon } from '@/components/icons/DiffIcon';
 import { useUIStore, type MainTab } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -1011,6 +1011,7 @@ export const Header: React.FC<HeaderProps> = ({
   const tabs: TabConfig[] = React.useMemo(() => {
     const base: TabConfig[] = [
       { id: 'chat', label: 'Chat', icon: RiChat4Line },
+      { id: 'worktrees', label: 'Worktrees', icon: RiGitBranchLine },
     ];
 
     if (showPlanTab) {

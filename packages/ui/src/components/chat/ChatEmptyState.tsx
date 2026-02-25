@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiGitBranchLine } from '@remixicon/react';
+import { RiGitBranchLine, RiAddLine } from '@remixicon/react';
 
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { TextLoop } from '@/components/ui/TextLoop';
@@ -7,6 +7,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useGitStatus, useGitStore } from '@/stores/useGitStore';
+import NewSessionDraftModal from './NewSessionDraftModal';
 
 const phrases = [
     "Fix the failing tests",
@@ -34,13 +35,14 @@ interface ChatEmptyStateProps {
 const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({
     showDraftContext = false,
 }) => {
+    const [showNewSessionModal, setShowNewSessionModal] = React.useState(false);
+    
     const { currentTheme } = useThemeSystem();
     const { git } = useRuntimeAPIs();
     const effectiveDirectory = useEffectiveDirectory();
     const { setActiveDirectory, fetchStatus } = useGitStore();
     const gitStatus = useGitStatus(effectiveDirectory ?? null);
 
-    // Use theme's muted foreground for secondary text
     const textColor = currentTheme?.colors?.surface?.mutedForeground || 'var(--muted-foreground)';
     const branchName = typeof gitStatus?.current === 'string' && gitStatus.current.trim().length > 0
         ? gitStatus.current.trim()
@@ -59,29 +61,49 @@ const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({
         }
     }, [effectiveDirectory, fetchStatus, git, setActiveDirectory, showDraftContext]);
 
+    const handleNewWorktreeSession = () => {
+        setShowNewSessionModal(true);
+    };
+
     return (
-        <div className="flex flex-col items-center justify-center min-h-full w-full gap-6">
-            <OpenChamberLogo width={140} height={140} className="opacity-20" isAnimated />
-            {showDraftContext && (
-                <div className="max-w-[calc(100%-2rem)] flex flex-col items-center gap-1">
-                    {branchName && (
-                        <div className="inline-flex items-center gap-1 text-body-md" style={{ color: textColor }}>
-                            <RiGitBranchLine className="h-4 w-4 shrink-0" />
-                            <span className="overflow-hidden whitespace-nowrap" title={branchName}>{branchName}</span>
-                        </div>
-                    )}
-                </div>
-            )}
-            <TextLoop
-                className="text-body-md"
-                interval={4}
-                transition={{ duration: 0.5 }}
-            >
-                {phrases.map((phrase) => (
-                    <span key={phrase} style={{ color: textColor }}>"{phrase}…"</span>
-                ))}
-            </TextLoop>
-        </div>
+        <>
+            <div className="flex flex-col items-center justify-center min-h-full w-full gap-6 py-8 overflow-y-auto">
+                <OpenChamberLogo width={140} height={140} className="opacity-20" isAnimated />
+                {showDraftContext && (
+                    <div className="max-w-[calc(100%-2rem)] flex flex-col items-center gap-1">
+                        {branchName && (
+                            <div className="inline-flex items-center gap-1 text-body-md" style={{ color: textColor }}>
+                                <RiGitBranchLine className="h-4 w-4 shrink-0" />
+                                <span className="overflow-hidden whitespace-nowrap" title={branchName}>{branchName}</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+                <TextLoop
+                    className="text-body-md"
+                    interval={4}
+                    transition={{ duration: 0.5 }}
+                >
+                    {phrases.map((phrase) => (
+                        <span key={phrase} style={{ color: textColor }}>"{phrase}…"</span>
+                    ))}
+                </TextLoop>
+                
+                <button
+                    type="button"
+                    onClick={handleNewWorktreeSession}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border hover:bg-muted transition-colors"
+                >
+                    <RiAddLine className="h-4 w-4" />
+                    <span className="text-sm">New Worktree Session</span>
+                </button>
+            </div>
+            
+            <NewSessionDraftModal 
+                isOpen={showNewSessionModal} 
+                onClose={() => setShowNewSessionModal(false)} 
+            />
+        </>
     );
 };
 

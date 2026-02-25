@@ -6067,6 +6067,95 @@ async function main(options = {}) {
     }
   });
 
+  // STT (Speech-to-Text) status endpoint
+  app.get('/api/transcribe/status', async (_req, res) => {
+    try {
+      const { sttService } = await import('./lib/stt-service.js');
+      res.json({
+        available: sttService.isAvailable()
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to check transcription status' });
+    }
+  });
+
+  // STT (Speech-to-Text) transcription endpoint
+  app.post('/api/transcribe', express.json({ limit: '25mb' }), async (req, res) => {
+    console.log('[Transcribe] Request received');
+    try {
+      const { sttService } = await import('./lib/stt-service.js');
+
+      const { audioData, mimeType, language, apiKey } = req.body || {};
+      
+      console.log('[Transcribe] Request data:', {
+        hasAudioData: !!audioData,
+        audioDataLength: audioData?.length,
+        mimeType,
+        language,
+        hasApiKey: !!apiKey,
+        apiKeyLength: apiKey?.length
+      });
+
+      if (!audioData) {
+        console.log('[Transcribe] Error: No audio data');
+        return res.status(400).json({ error: 'No audio data provided' });
+      }
+
+      const hasServerKey = sttService.isAvailable();
+      const hasClientKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
+
+      console.log('[Transcribe] Key status:', { hasServerKey, hasClientKey });
+
+      if (!hasServerKey && !hasClientKey) {
+        console.log('[Transcribe] Error: No API key available');
+        return res.status(503).json({
+          error: 'Transcription service not available. Please configure OpenAI in OpenCode or provide an API key in settings.'
+        });
+      }
+
+      let audioBuffer;
+      try {
+        audioBuffer = Buffer.from(audioData, 'base64');
+        console.log('[Transcribe] Audio buffer size:', audioBuffer.length, 'bytes');
+      } catch (e) {
+        console.log('[Transcribe] Error: Invalid base64 encoding');
+        return res.status(400).json({ error: 'Invalid audio data encoding' });
+      }
+
+      const extension = mimeType?.includes('webm') ? 'webm' :
+                       mimeType?.includes('mp4') ? 'mp4' :
+                       mimeType?.includes('ogg') ? 'ogg' :
+                       mimeType?.includes('wav') ? 'wav' : 'webm';
+      const filename = `recording.${extension}`;
+      
+      console.log('[Transcribe] Sending to Whisper API, filename:', filename);
+
+      try {
+        const result = await sttService.transcribe({
+          audioBuffer,
+          filename,
+          language,
+          apiKey: hasClientKey ? apiKey.trim() : undefined
+        });
+
+        console.log('[Transcribe] Success! Result:', JSON.stringify(result));
+        res.json(result);
+      } catch (transcribeError) {
+        console.error('[Transcribe] Whisper API error:', transcribeError);
+        res.status(500).json({
+          error: transcribeError instanceof Error ? transcribeError.message : 'Transcription failed'
+        });
+      }
+    } catch (error) {
+      console.error('[Transcribe] General error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: error instanceof Error ? error.message : 'Transcription failed'
+        });
+      }
+    }
+  });
+
   // New authoritative session status endpoints
   // Server maintains the source of truth, clients only query
 

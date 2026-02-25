@@ -708,25 +708,29 @@ const queueWorktreeStartScripts = (directory, projectID, startCommand) => {
     const run = async () => {
       const projectStart = await loadProjectStartCommand(projectID);
       if (projectStart) {
+        console.log('[Worktree] Running project start command:', projectStart);
         const projectResult = await runWorktreeStartCommand(directory, projectStart);
         if (!projectResult.success) {
-          console.warn('Worktree project start command failed:', projectResult.message || projectResult.stderr || projectResult.stdout);
-          return;
+          console.warn('[Worktree] Project start command failed:', projectResult.message || projectResult.stderr || projectResult.stdout);
         }
       }
 
       const extraCommand = String(startCommand || '').trim();
       if (!extraCommand) {
+        console.log('[Worktree] No extra start command configured');
         return;
       }
+      console.log('[Worktree] Running extra start command:', extraCommand);
       const extraResult = await runWorktreeStartCommand(directory, extraCommand);
       if (!extraResult.success) {
-        console.warn('Worktree start command failed:', extraResult.message || extraResult.stderr || extraResult.stdout);
+        console.warn('[Worktree] Extra start command failed:', extraResult.message || extraResult.stderr || extraResult.stdout);
+      } else {
+        console.log('[Worktree] Extra start command completed successfully');
       }
     };
 
     void run().catch((error) => {
-      console.warn('Worktree start script task failed:', error instanceof Error ? error.message : String(error));
+      console.warn('[Worktree] Start script task failed:', error instanceof Error ? error.message : String(error));
     });
   }, 0);
 };

@@ -8,6 +8,7 @@ import { useSessionStore } from '@/stores/useSessionStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { Skeleton } from '@/components/ui/skeleton';
 import ChatEmptyState from './ChatEmptyState';
+import NewSessionDraftPanel from './NewSessionDraftPanel';
 import MessageList from './MessageList';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useChatScrollManager } from '@/hooks/useChatScrollManager';
@@ -78,6 +79,7 @@ export const ChatContainer: React.FC = () => {
         openNewSessionDraft,
         trimToViewportWindow,
         newSessionDraft,
+        isDraftModalOpen,
     } = useSessionStore(
         useShallow((state) => ({
             currentSessionId: state.currentSessionId,
@@ -88,6 +90,7 @@ export const ChatContainer: React.FC = () => {
             openNewSessionDraft: state.openNewSessionDraft,
             trimToViewportWindow: state.trimToViewportWindow,
             newSessionDraft: state.newSessionDraft,
+            isDraftModalOpen: state.isDraftModalOpen,
         }))
     );
 
@@ -430,10 +433,11 @@ export const ChatContainer: React.FC = () => {
                 style={isMobile ? { paddingBottom: 'var(--oc-keyboard-inset, 0px)' } : undefined}
             >
                 {!isDesktopExpandedInput ? (
-                <div className="flex-1 flex items-center justify-center">
-                    <ChatEmptyState showDraftContext />
+                <div className="flex-1 flex items-center justify-center overflow-y-auto">
+                    <NewSessionDraftPanel showDraftContext />
                 </div>
                 ) : null}
+                {!isDraftModalOpen && (
                 <div
                     className={cn(
                         'relative z-10',
@@ -444,6 +448,7 @@ export const ChatContainer: React.FC = () => {
                 >
                     <ChatInput scrollToBottom={scrollToBottom} />
                 </div>
+                )}
             </div>
         );
     }
@@ -490,16 +495,18 @@ export const ChatContainer: React.FC = () => {
                     <ChatEmptyState />
                 </div>
                 ) : null}
-                <div
-                    className={cn(
-                        'relative z-10',
-                        isDesktopExpandedInput
-                            ? 'flex-1 min-h-0 bg-background'
-                            : 'bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80'
-                    )}
-                >
-                    <ChatInput scrollToBottom={scrollToBottom} />
-                </div>
+                {!isDraftModalOpen && (
+                    <div
+                        className={cn(
+                            'relative z-10',
+                            isDesktopExpandedInput
+                                ? 'flex-1 min-h-0 bg-background'
+                                : 'bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80'
+                        )}
+                    >
+                        <ChatInput scrollToBottom={scrollToBottom} />
+                    </div>
+                )}
             </div>
         );
     }

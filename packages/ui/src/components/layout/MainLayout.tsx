@@ -23,7 +23,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { cn } from '@/lib/utils';
 
-import { ChatView, PlanView, GitView, DiffView, TerminalView, FilesView, SettingsView, SettingsWindow } from '@/components/views';
+import { ChatView, PlanView, GitView, DiffView, TerminalView, FilesView, SettingsView, SettingsWindow, WorktreesView } from '@/components/views';
 
 // Mobile drawer width as screen percentage
 const MOBILE_DRAWER_WIDTH_PERCENT = 85;
@@ -542,6 +542,8 @@ export const MainLayout: React.FC = () => {
                 return <TerminalView />;
             case 'files':
                 return <FilesView />;
+            case 'worktrees':
+                return <WorktreesView />;
             default:
                 return null;
         }

@@ -104,8 +104,11 @@ export const useSessionStore = create<SessionStore>()(
             userSummaryTitles: new Map(),
             pendingInputText: null,
             pendingInputMode: 'replace',
+            pendingInputSkipFocus: false,
             pendingSyntheticParts: null,
             newSessionDraft: { open: true, directoryOverride: null, parentID: null },
+            isDraftModalOpen: false,
+            draftMessage: '',
 
             // Voice state (initialized to disconnected/idle)
             voiceStatus: 'disconnected',
@@ -191,6 +194,14 @@ export const useSessionStore = create<SessionStore>()(
                         newSessionDraft: { open: false, directoryOverride: null, parentID: null, title: undefined, initialPrompt: undefined, syntheticParts: undefined, targetFolderId: undefined },
                         currentSessionId: realCurrentSessionId,
                     });
+                },
+
+                setDraftModalOpen: (open: boolean) => {
+                    set({ isDraftModalOpen: open });
+                },
+
+                setDraftMessage: (message: string) => {
+                    set({ draftMessage: message });
                 },
 
                 createSession: async (title?: string, directoryOverride?: string | null, parentID?: string | null) => {
@@ -813,20 +824,23 @@ export const useSessionStore = create<SessionStore>()(
                     }
                 },
 
-                setPendingInputText: (text: string | null, mode: 'replace' | 'append' = 'replace') => {
-                    set({ pendingInputText: text, pendingInputMode: mode });
+                setPendingInputText: (text: string | null, mode: 'replace' | 'append' = 'replace', skipFocus = false) => {
+                    console.log('[useSessionStore] setPendingInputText called:', { text, mode, skipFocus });
+                    set({ pendingInputText: text, pendingInputMode: mode, pendingInputSkipFocus: skipFocus });
                 },
 
                 consumePendingInputText: () => {
                     const text = get().pendingInputText;
                     const mode = get().pendingInputMode;
+                    const skipFocus = get().pendingInputSkipFocus;
+                    console.log('[useSessionStore] consumePendingInputText:', { text, mode, skipFocus });
                     if (text !== null) {
-                        set({ pendingInputText: null, pendingInputMode: 'replace' });
+                        set({ pendingInputText: null, pendingInputMode: 'replace', pendingInputSkipFocus: false });
                     }
                     if (text === null) {
                         return null;
                     }
-                    return { text, mode };
+                    return { text, mode, skipFocus };
                 },
 
                 setPendingSyntheticParts: (parts: SyntheticContextPart[] | null) => {

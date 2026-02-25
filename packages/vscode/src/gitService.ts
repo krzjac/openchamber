@@ -1277,7 +1277,6 @@ const queueWorktreeStartScripts = (directory: string, projectID: string, startCo
         const projectResult = await runWorktreeStartCommand(directory, projectStart);
         if (!projectResult.success) {
           console.warn('[GitService] Worktree project start command failed:', projectResult.message || projectResult.stderr || projectResult.stdout);
-          return;
         }
       }
 

@@ -27,7 +27,7 @@ import { FadeInOnReveal } from './message/FadeInOnReveal';
 import type { TurnGroupingContext } from './hooks/useTurnGrouping';
 import { copyTextToClipboard } from '@/lib/clipboard';
 
-const ToolOutputDialog = React.lazy(() => import('./message/ToolOutputDialog'));
+import ToolOutputDialog from './message/ToolOutputDialog';
 
 const DETAILED_DEFAULT_TOOLS = new Set(['task', 'edit', 'multiedit', 'write', 'apply_patch', 'bash', 'todowrite']);
 
@@ -999,14 +999,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     )}
                 </div>
             </div>
-            <React.Suspense fallback={null}>
-                <ToolOutputDialog
-                    popup={popupContent}
-                    onOpenChange={handlePopupChange}
-                    syntaxTheme={syntaxTheme}
-                    isMobile={isMobile}
-                />
-            </React.Suspense>
+            <ToolOutputDialog
+                popup={popupContent}
+                onOpenChange={handlePopupChange}
+                syntaxTheme={syntaxTheme}
+                isMobile={isMobile}
+            />
         </>
     );
 };
