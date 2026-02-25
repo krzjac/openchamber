@@ -24,6 +24,10 @@ export const NewSessionDraftModal: React.FC<NewSessionDraftModalProps> = ({
 }) => {
     const [selectedProject, setSelectedProject] = React.useState<ProjectEntry | null>(null);
     const [isSending, setIsSending] = React.useState(false);
+    // Defer ChatInput rendering until after openNewSessionDraft clears currentSessionId.
+    // Without this, the ChatInput mounts (during render) before the effect runs, and
+    // initializes its local message state from the *previous* chat session's localStorage draft.
+    const [draftReady, setDraftReady] = React.useState(false);
     
     const projects = useProjectsStore((state) => state.projects);
     const currentProviderId = useConfigStore((state) => state.currentProviderId);
@@ -44,12 +48,26 @@ export const NewSessionDraftModal: React.FC<NewSessionDraftModalProps> = ({
     React.useEffect(() => {
         setDraftModalOpen(isOpen);
         if (isOpen) {
+            // Clear any stale text from the previous chat before opening the draft.
+            // This prevents typed text from a chat session leaking into the
+            // worktree creation modal.
+            setDraftMessage('');
+            try {
+                localStorage.removeItem('openchamber_chat_input_draft_new');
+            } catch {
+                // Ignore localStorage errors
+            }
             openNewSessionDraft({});
+            // Signal that the draft store is ready — ChatInput can now mount safely
+            // with currentSessionId=null and an empty draft.
+            setDraftReady(true);
+        } else {
+            setDraftReady(false);
         }
         return () => {
             setDraftModalOpen(false);
         };
-    }, [isOpen, setDraftModalOpen, openNewSessionDraft]);
+    }, [isOpen, setDraftModalOpen, openNewSessionDraft, setDraftMessage]);
     
     React.useEffect(() => {
         if (!isOpen) {
@@ -198,7 +216,7 @@ export const NewSessionDraftModal: React.FC<NewSessionDraftModalProps> = ({
                 </div>
                 
                 <div className="flex-1 overflow-hidden mt-4">
-                    <ChatInput onMessageChange={setDraftMessage} />
+                    {draftReady && <ChatInput onMessageChange={setDraftMessage} />}
                 </div>
                 
                 <div className="flex items-center justify-end gap-2 p-4 border-t border-border">

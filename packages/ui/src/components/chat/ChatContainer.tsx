@@ -576,7 +576,7 @@ export const ChatContainer: React.FC = () => {
                         </Button>
                     </div>
                 )}
-                <ChatInput scrollToBottom={scrollToBottom} />
+                {!isDraftModalOpen && <ChatInput scrollToBottom={scrollToBottom} />}
             </div>
 
             <TimelineDialog
